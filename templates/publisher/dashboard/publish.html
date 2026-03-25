@@ -1,0 +1,407 @@
+{% extends 'base_dashboard.html' %}
+{% block dashboard_content %}
+<h1 class="sp-page-title">Publish</h1>
+<p class="sp-page-subtitle">Review and publish your files to the wiki.</p>
+
+<div style="display:grid;grid-template-columns:1fr 320px;gap:1.5rem;align-items:start;">
+
+  {# Left column #}
+  <div>
+
+    <div class="sp-card" style="margin-bottom:1.25rem;">
+      <div class="sp-card__header">Metadata</div>
+      <div class="sp-card__body">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem;">
+          <div class="sp-field" style="margin:0;">
+            <label class="sp-label">Title <span style="font-weight:400;color:var(--color-subtle);font-size:.8125rem;">(optional)</span></label>
+            <input id="metaTitle" type="text" class="sp-input" placeholder="My Gadget" />
+          </div>
+          <div class="sp-field" style="margin:0;">
+            <label class="sp-label">Version <span style="font-weight:400;color:var(--color-subtle);font-size:.8125rem;">(optional)</span></label>
+            <input id="metaVersion" type="text" class="sp-input" placeholder="v1.0.0" />
+          </div>
+        </div>
+        <div class="sp-field" style="margin:0;">
+          <label class="sp-label">Edit summary</label>
+          <input id="metaSummary" type="text" class="sp-input"
+                 value="Published via WikiScriptSync"
+                 placeholder="Published via WikiScriptSync" />
+          <p class="sp-field-hint">Becomes the edit summary on the wiki page revision. A default is pre-filled.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="sp-card">
+      <div class="sp-card__header">Publish method</div>
+      <div class="sp-card__body">
+        <div style="background:var(--bg-neutral-dark);padding:3px;border-radius:4px;display:flex;margin-bottom:1.25rem;max-width:340px;">
+          <button id="tab-draft" onclick="switchMethod('draft')"
+            style="flex:1;padding:.5rem;border:none;border-radius:2px;cursor:pointer;font-size:.875rem;font-weight:600;background:var(--bg-base);color:var(--color-base);">
+            <i class="fa-regular fa-file-lines"></i> Draft URL
+          </button>
+          <button id="tab-botpassword" onclick="switchMethod('botpassword')"
+            style="flex:1;padding:.5rem;border:none;border-radius:2px;cursor:pointer;font-size:.875rem;font-weight:500;background:transparent;color:var(--color-subtle);">
+            <i class="fa-solid fa-robot"></i> BotPassword
+          </button>
+        </div>
+
+        <div id="method-draft">
+          <div class="sp-notice sp-notice--success">
+            <i class="fa-solid fa-circle-check" style="flex-shrink:0;"></i>
+            <div>
+              <strong>Recommended for most users.</strong>
+              The tool shows you the file content. You open the wiki edit URL, paste the content, and save it yourself.
+              No JS-editing OAuth permission needed.
+            </div>
+          </div>
+        </div>
+
+        <div id="method-botpassword" style="display:none;">
+          <div class="sp-notice sp-notice--warning">
+            <i class="fa-solid fa-triangle-exclamation" style="flex-shrink:0;"></i>
+            <div>
+              <strong>Direct edit.</strong> Edits the wiki page directly using your BotPassword.
+              You must have rights to edit the target page. Credentials are used only for this request and never stored.
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-top:.75rem;">
+            <div class="sp-field" style="margin:0;">
+              <label class="sp-label">Bot username</label>
+              <input id="botUsername" type="text" class="sp-input" placeholder="Username@bot-name" />
+            </div>
+            <div class="sp-field" style="margin:0;">
+              <label class="sp-label">Bot password</label>
+              <input id="botPassword" type="password" class="sp-input" placeholder="••••••••••••••••" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# Right column #}
+  <div>
+    <div class="sp-card">
+      <div class="sp-card__header">Files to publish</div>
+      <div class="sp-card__body">
+        <div id="fileSummaryList" style="margin-bottom:1.25rem;">
+          <p style="font-size:.875rem;color:var(--color-subtle);">No mappings loaded. <a href="{% url 'mapping_config' %}">Go to mapping.</a></p>
+        </div>
+        <div id="publishError" class="sp-notice sp-notice--error hidden" style="margin-bottom:1rem;">
+          <i class="fa-solid fa-circle-exclamation" style="flex-shrink:0;"></i>
+          <p id="publishErrorText" style="margin:0;font-size:.875rem;"></p>
+        </div>
+        <button onclick="startPublish()" id="publishBtn" class="sp-btn sp-btn--primary"
+                style="width:100%;justify-content:center;padding:.75rem;">
+          <i class="fa-solid fa-paper-plane"></i>
+          <span id="publishBtnText">Review &amp; publish</span>
+        </button>
+        <p style="font-size:.8125rem;color:var(--color-subtle);text-align:center;margin:.75rem 0 0;">
+          You will see the full diff before anything changes.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Diff + confirmation modal ─────────────────────────────────────────────── #}
+<div id="confirmModal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);">
+  <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1rem;">
+    <div style="background:var(--bg-base);border-radius:4px;width:100%;max-width:960px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.25);">
+
+      <div style="padding:.875rem 1.25rem;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;background:var(--bg-neutral);flex-shrink:0;">
+        <h3 style="margin:0;font-size:1rem;font-weight:600;">
+          <i class="fa-solid fa-code-compare" style="color:var(--wmf-blue);margin-right:.5rem;"></i>
+          Review changes before publishing
+        </h3>
+        <button onclick="closeConfirmModal()" class="sp-btn sp-btn--quiet sp-btn--sm"><i class="fa-solid fa-xmark fa-lg"></i></button>
+      </div>
+
+      <div id="diffContainer" style="flex:1;overflow:auto;"></div>
+
+      <div style="padding:.875rem 1.25rem;border-top:1px solid var(--border-color);background:var(--bg-neutral);display:flex;justify-content:space-between;align-items:center;flex-shrink:0;gap:1rem;flex-wrap:wrap;">
+        <p style="margin:0;font-size:.8125rem;color:var(--color-subtle);" id="diffHint"></p>
+        <div style="display:flex;gap:.5rem;">
+          <button onclick="closeConfirmModal()" class="sp-btn">Cancel</button>
+          <button onclick="confirmAndPublish()" id="confirmBtn" class="sp-btn sp-btn--primary">
+            <i class="fa-solid fa-check"></i> Confirm and publish
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Draft result modal ────────────────────────────────────────────────────── #}
+<div id="draftResultModal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);">
+  <div style="display:flex;align-items:center;justify-content:center;min-height:100vh;padding:1rem;">
+    <div style="background:var(--bg-base);border-radius:4px;width:100%;max-width:680px;max-height:88vh;overflow-y:auto;padding:2rem;box-shadow:0 8px 32px rgba(0,0,0,.25);">
+
+      <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1.5rem;">
+        <div style="width:40px;height:40px;background:var(--wmf-green-light);border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+          <i class="fa-solid fa-circle-check" style="color:var(--wmf-green);"></i>
+        </div>
+        <div>
+          <h3 style="margin:0;font-size:1rem;font-weight:700;">Ready to publish</h3>
+          <p style="margin:.2rem 0 0;font-size:.875rem;color:var(--color-subtle);">
+            Follow the steps below to publish each file to the wiki.
+          </p>
+        </div>
+      </div>
+
+      <div id="draftStepsList"></div>
+
+      <div class="sp-notice sp-notice--info" style="margin-bottom:1.5rem;">
+        <i class="fa-solid fa-circle-info" style="flex-shrink:0;margin-top:.1rem;"></i>
+        <div style="font-size:.875rem;">
+          <strong>Why copy-paste?</strong> WikiScriptSync uses OAuth only for identity —
+          not for editing. This is intentional: it keeps the tool within its approved
+          permissions and means you always review before anything changes on the wiki.
+          The publish log entry will stay <em>Pending</em> until you submit the edit.
+        </div>
+      </div>
+
+      <div class="sp-field">
+        <label class="sp-label" style="font-size:.75rem;text-transform:uppercase;letter-spacing:.04em;">
+          Talk-page notification wikitext
+          <span style="text-transform:none;font-weight:400;"> — paste on the relevant talk page (optional)</span>
+        </label>
+        <textarea id="draftNotification" class="sp-textarea" rows="5" readonly
+                  style="font-family:monospace;font-size:.8125rem;resize:none;background:var(--bg-neutral);"></textarea>
+        <button onclick="copyNotification()" class="sp-btn sp-btn--sm" style="margin-top:.375rem;">
+          <i class="fa-regular fa-copy"></i> Copy notification wikitext
+        </button>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;gap:.75rem;margin-top:.5rem;">
+        <button onclick="document.getElementById('draftResultModal').style.display='none'" class="sp-btn">Close</button>
+        <a href="{% url 'publish_log' %}" class="sp-btn sp-btn--primary">View publish log</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CSRF_TOKEN = "{{ csrf_token }}";
+let mappings = [];
+let currentMethod = "draft";
+
+document.addEventListener("DOMContentLoaded", () => {
+  const raw   = sessionStorage.getItem("mappingConfig");
+  const files = sessionStorage.getItem("selectedFiles");
+  if (raw) {
+    const fileMap = {};
+    if (files) JSON.parse(files).forEach(f => { fileMap[f.name] = f.content; });
+    mappings = JSON.parse(raw).map(m => ({...m, content: fileMap[m.source] || ""}));
+    renderFileSummary();
+  }
+});
+
+function renderFileSummary() {
+  const c = document.getElementById("fileSummaryList");
+  if (!mappings.length) return;
+  c.innerHTML = "";
+  mappings.forEach(m => {
+    const d = document.createElement("div");
+    d.style.cssText = "padding:.5rem 0;border-bottom:1px solid var(--bg-neutral-dark);font-size:.875rem;";
+    d.innerHTML = `
+      <p class="sp-mono" style="margin:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(m.source)}</p>
+      <p style="margin:.2rem 0 0;font-size:.8125rem;color:var(--color-subtle);">
+        → <span class="sp-mono">${esc(m.dest || "(no destination set)")}</span>
+      </p>
+      <p style="margin:.1rem 0 0;font-size:.75rem;color:var(--color-placeholder);">${esc(m.wiki)}</p>`;
+    c.appendChild(d);
+  });
+}
+
+function switchMethod(m) {
+  currentMethod = m;
+  const isDraft = m === "draft";
+  document.getElementById("method-draft").style.display       = isDraft ? "block" : "none";
+  document.getElementById("method-botpassword").style.display = isDraft ? "none"  : "block";
+  const act = {background:"var(--bg-base)",   color:"var(--color-base)",   fontWeight:"600"};
+  const ina = {background:"transparent",      color:"var(--color-subtle)", fontWeight:"500"};
+  Object.assign(document.getElementById("tab-draft").style,       isDraft ? act : ina);
+  Object.assign(document.getElementById("tab-botpassword").style, isDraft ? ina : act);
+}
+
+async function startPublish() {
+  if (!mappings.length) { showError("No files to publish. Go back to mapping config."); return; }
+  const unmapped = mappings.filter(m => !m.dest || !m.wiki);
+  if (unmapped.length) { showError(`${unmapped.length} file(s) have no destination set. Complete the mapping first.`); return; }
+  const noContent = mappings.filter(m => !m.content);
+  if (noContent.length) { showError(`${noContent.length} file(s) have no content. Go back and re-fetch the repository.`); return; }
+  hideError();
+  document.getElementById("diffContainer").innerHTML = await buildDiffHtml();
+  // Set hint text based on method
+  document.getElementById("diffHint").textContent =
+    currentMethod === "draft"
+      ? "Review each file carefully. You will get an edit URL and the content to paste."
+      : "Review each file. Clicking Confirm will edit the wiki page directly via your BotPassword.";
+  document.getElementById("confirmModal").style.display = "block";
+}
+
+async function buildDiffHtml() {
+  let html = `<div style="padding:.75rem 1.25rem;background:#fffbe6;border-bottom:1px solid #f5c518;font-size:.8125rem;color:#5c4a00;">
+    <i class="fa-solid fa-circle-info" style="margin-right:.375rem;"></i>
+    <strong>Left (red):</strong> current content on the wiki. &nbsp;
+    <strong>Right (green):</strong> incoming content from the repository.
+    Identical content means the wiki is already up to date.
+  </div>`;
+
+  for (const m of mappings) {
+    let currentContent = null;
+    try {
+      const r = await fetch(`/api/page-content/?wiki=${encodeURIComponent(m.wiki)}&page=${encodeURIComponent(m.dest)}`);
+      if (r.ok) currentContent = (await r.json()).content;
+    } catch(_) {}
+
+    const identical = currentContent !== null && currentContent.trim() === (m.content || "").trim();
+
+    html += `<div style="border-bottom:1px solid var(--border-color);">
+      <div style="padding:.625rem 1.25rem;background:var(--bg-neutral);border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;font-size:.8125rem;gap:1rem;flex-wrap:wrap;">
+        <strong class="sp-mono">${esc(m.source)}</strong>
+        <span style="color:var(--color-subtle);">→ <span class="sp-mono">${esc(m.dest)}</span> on ${esc(m.wiki)}</span>
+        ${identical ? '<span style="background:#d5fdf4;color:#0d5c4a;padding:.125rem .5rem;border-radius:2px;font-size:.75rem;font-weight:600;">✓ Already up to date</span>' : ''}
+      </div>
+      <div style="display:flex;min-height:60px;">
+        <div style="flex:1;min-width:0;border-right:1px solid var(--border-color);">
+          <div style="padding:.375rem .75rem;background:#fff5f5;font-size:.75rem;font-weight:600;color:#7a1a1a;border-bottom:1px solid #ffd7d7;">
+            ← Current on wiki${currentContent === null ? " (page does not exist yet)" : ""}
+          </div>
+          <pre style="padding:.75rem;font-size:.75rem;font-family:monospace;overflow:auto;max-height:220px;margin:0;white-space:pre-wrap;color:var(--color-subtle);word-break:break-all;">${esc(currentContent || "")}</pre>
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="padding:.375rem .75rem;background:#f0fff4;font-size:.75rem;font-weight:600;color:#0d5c4a;border-bottom:1px solid #b7f5d8;">
+            → Incoming from repository
+          </div>
+          <pre style="padding:.75rem;font-size:.75rem;font-family:monospace;overflow:auto;max-height:220px;margin:0;white-space:pre-wrap;word-break:break-all;">${esc(m.content || "")}</pre>
+        </div>
+      </div>
+    </div>`;
+  }
+  return html;
+}
+
+function closeConfirmModal() { document.getElementById("confirmModal").style.display = "none"; }
+
+async function confirmAndPublish() {
+  const confirmBtn = document.getElementById("confirmBtn");
+  confirmBtn.disabled = true;
+  confirmBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Publishing…';
+
+  // Default edit summary if left empty
+  const summary  = document.getElementById("metaSummary").value.trim() || "Published via WikiScriptSync";
+  const version  = document.getElementById("metaVersion").value.trim();
+  const repoUrl  = sessionStorage.getItem("repoUrl") || "";
+
+  const results = [];
+  for (const m of mappings) {
+    const payload = {
+      method:       currentMethod,
+      wiki:         m.wiki,
+      page:         m.dest,
+      content:      m.content,
+      edit_summary: summary,
+      source_repo:  repoUrl,
+      source_file:  m.source,
+      version:      version,
+    };
+
+    if (currentMethod === "botpassword") {
+      payload.bot_username = document.getElementById("botUsername")?.value?.trim() || "";
+      payload.bot_password = document.getElementById("botPassword")?.value || "";
+    }
+
+    try {
+      const r = await fetch("/api/publish/", {
+        method:  "POST",
+        headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN},
+        body:    JSON.stringify(payload),
+      });
+      const data = await r.json();
+      results.push({file: m.source, dest: m.dest, wiki: m.wiki, ok: r.ok, data, content: m.content});
+    } catch(e) {
+      results.push({file: m.source, dest: m.dest, wiki: m.wiki, ok: false, data: {error: "Network error."}, content: m.content});
+    }
+  }
+
+  closeConfirmModal();
+  confirmBtn.disabled = false;
+  confirmBtn.innerHTML = '<i class="fa-solid fa-check"></i> Confirm and publish';
+
+  if (currentMethod === "draft") {
+    // Build the per-file step list
+    const stepsList = document.getElementById("draftStepsList");
+    stepsList.innerHTML = "";
+    results.forEach((r, i) => {
+      const editUrl = r.data.edit_url || `https://${r.wiki}/w/index.php?title=${encodeURIComponent(r.dest)}&action=edit`;
+      const div = document.createElement("div");
+      div.style.cssText = "margin-bottom:1.25rem;padding:1rem;border:1px solid var(--border-color);border-radius:4px;background:var(--bg-neutral);";
+      div.innerHTML = `
+        <p style="margin:0 0 .5rem;font-size:.875rem;font-weight:600;">
+          Step ${i+1}: <span class="sp-mono">${esc(r.dest)}</span> on ${esc(r.wiki)}
+        </p>
+        <p style="margin:0 0 .75rem;font-size:.8125rem;color:var(--color-subtle);">
+          <i class="fa-solid fa-circle-info" style="color:var(--wmf-blue);"></i>
+          Open the edit page, <strong>select all existing text and delete it</strong>, then paste the content below and save.
+        </p>
+        <div style="display:flex;gap:.5rem;margin-bottom:.625rem;">
+          <a href="${editUrl}" target="_blank" rel="noopener" class="sp-btn sp-btn--primary sp-btn--sm">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> Open edit page
+          </a>
+          <button onclick="copyFileContent(${i})" class="sp-btn sp-btn--sm" id="copyBtn${i}">
+            <i class="fa-regular fa-copy"></i> Copy file content
+          </button>
+        </div>
+        <details style="font-size:.8125rem;">
+          <summary style="cursor:pointer;color:var(--wmf-blue);user-select:none;">Show content to paste</summary>
+          <pre id="fileContent${i}" style="margin:.5rem 0 0;padding:.75rem;background:var(--bg-base);border:1px solid var(--border-color);border-radius:2px;font-size:.75rem;max-height:200px;overflow:auto;white-space:pre-wrap;word-break:break-all;">${esc(r.content || "")}</pre>
+        </details>`;
+      stepsList.appendChild(div);
+    });
+
+    // Notification wikitext from first result
+    const firstNotif = results[0]?.data?.notification_wikitext || "";
+    document.getElementById("draftNotification").value = firstNotif;
+    document.getElementById("draftResultModal").style.display = "block";
+
+  } else {
+    // BotPassword path
+    const failures = results.filter(r => !r.ok);
+    if (!failures.length) {
+      alert(`✓ Published ${results.length} file(s) successfully via BotPassword.`);
+      window.location.href = "{% url 'publish_log' %}";
+    } else {
+      showError(
+        `${failures.length} file(s) failed: ` +
+        failures.map(f => `${f.file}: ${f.data.error}`).join("; ")
+      );
+    }
+  }
+}
+
+// Store file contents for the copy buttons
+let _resultContents = [];
+function copyFileContent(i) {
+  const pre = document.getElementById(`fileContent${i}`);
+  if (!pre) return;
+  navigator.clipboard.writeText(pre.textContent).then(() => {
+    const btn = document.getElementById(`copyBtn${i}`);
+    if (btn) { btn.innerHTML = '<i class="fa-solid fa-check"></i> Copied!'; setTimeout(() => { btn.innerHTML = '<i class="fa-regular fa-copy"></i> Copy file content'; }, 2000); }
+  });
+}
+
+function copyNotification() {
+  const text = document.getElementById("draftNotification").value;
+  navigator.clipboard.writeText(text).then(() => alert("Notification wikitext copied to clipboard."));
+}
+
+function showError(msg) {
+  document.getElementById("publishError").classList.remove("hidden");
+  document.getElementById("publishErrorText").textContent = msg;
+}
+function hideError() { document.getElementById("publishError").classList.add("hidden"); }
+function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+</script>
+{% endblock %}

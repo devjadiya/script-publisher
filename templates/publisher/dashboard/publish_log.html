@@ -1,0 +1,74 @@
+{% extends 'base_dashboard.html' %}
+{% block dashboard_content %}
+<h1 class="sp-page-title">Publish Log</h1>
+<p class="sp-page-subtitle">History of all publish actions from your account.</p>
+
+<div class="sp-notice sp-notice--info" style="margin-bottom:1.25rem;">
+  <i class="fa-solid fa-circle-info" style="flex-shrink:0;margin-top:.1rem;"></i>
+  <div style="font-size:.875rem;">
+    <strong>About statuses:</strong>
+    <span class="sp-badge sp-badge--pending" style="margin:0 .25rem;"><i class="fa-regular fa-clock"></i> Pending review</span> means a draft edit URL was generated — the log records that you started the process, but the status stays Pending until you actually submit the edit on the wiki yourself.
+    <span class="sp-badge sp-badge--success" style="margin:0 .25rem;"><i class="fa-solid fa-check"></i> Published</span> means a BotPassword direct edit succeeded.
+  </div>
+</div>
+
+<div class="sp-card">
+  {% if logs %}
+  <div style="overflow-x:auto;">
+    <table class="sp-table">
+      <thead><tr>
+        <th>File</th>
+        <th>Target page</th>
+        <th>Method</th>
+        <th>Status</th>
+        <th>Date</th>
+      </tr></thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td>
+            <span class="sp-mono sp-text-small">{{ log.source_file }}</span>
+            {% if log.version %}
+              <span class="sp-badge sp-badge--neutral" style="margin-left:.375rem;">{{ log.version }}</span>
+            {% endif %}
+          </td>
+          <td class="sp-text-small">
+            <span class="sp-mono">{{ log.target_page }}</span><br>
+            <span style="font-size:.75rem;color:var(--color-placeholder);">{{ log.target_wiki }}</span>
+          </td>
+          <td class="sp-text-small">
+            {% if log.publish_method == "botpassword" %}
+              <i class="fa-solid fa-robot" style="color:var(--color-subtle);"></i> BotPassword
+            {% else %}
+              <i class="fa-regular fa-file-lines" style="color:var(--color-subtle);"></i> Draft URL
+            {% endif %}
+          </td>
+          <td>
+            {% if log.status == "success" %}
+              <span class="sp-badge sp-badge--success"><i class="fa-solid fa-check"></i> Published</span>
+            {% elif log.status == "failed" %}
+              <span class="sp-badge sp-badge--error" title="{{ log.error_message }}"><i class="fa-solid fa-xmark"></i> Failed</span>
+            {% else %}
+              <span class="sp-badge sp-badge--pending" title="Draft URL was generated. Submit the edit on the wiki to complete.">
+                <i class="fa-regular fa-clock"></i> Pending review
+              </span>
+            {% endif %}
+          </td>
+          <td class="sp-text-small sp-text-subtle" style="white-space:nowrap;">
+            {{ log.created_at|date:"Y-m-d H:i" }} UTC
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding:4rem;text-align:center;color:var(--color-subtle);">
+    <i class="fa-solid fa-clock-rotate-left" style="font-size:2.5rem;opacity:.25;display:block;margin-bottom:1rem;"></i>
+    <p style="margin:0;font-weight:500;">No publish actions yet.</p>
+    <p style="margin:.5rem 0 1.5rem;font-size:.875rem;">Your publish history will appear here.</p>
+    <a href="{% url 'upload_files' %}" class="sp-btn sp-btn--primary">Start your first publish</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

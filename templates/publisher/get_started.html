@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+{% block navbar %}{% endblock %}
+{% block content %}
+<div style="min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:2rem 1rem;background:var(--bg-neutral);">
+
+  <div style="margin-bottom:2rem;text-align:center;">
+    <a href="{% url 'home' %}" style="display:inline-flex;align-items:center;gap:.5rem;color:var(--color-base);font-size:1.5rem;font-weight:700;text-decoration:none;">
+      <i class="fa-solid fa-code-branch" style="color:var(--wmf-blue);"></i>
+      WikiScriptSync
+    </a>
+    <p style="margin:.375rem 0 0;font-size:.875rem;color:var(--color-subtle);">Sign in to continue</p>
+  </div>
+
+  <div style="width:100%;max-width:480px;background:var(--bg-base);border:1px solid var(--border-color);border-radius:6px;padding:2rem;box-shadow:0 2px 8px rgba(0,0,0,.1);">
+
+    {% if error %}
+    <div class="sp-notice sp-notice--error" style="margin-bottom:1.25rem;">
+      <i class="fa-solid fa-circle-exclamation" style="flex-shrink:0;"></i>
+      <p style="margin:0;font-size:.875rem;">{{ error }}</p>
+    </div>
+    {% endif %}
+
+    {# Tab switcher — OAuth first as recommended #}
+    <div style="background:var(--bg-neutral-dark);padding:3px;border-radius:4px;display:flex;margin-bottom:1.5rem;">
+      <button id="tab-oauth" onclick="switchTab('oauth')"
+        style="flex:1;padding:.5rem;border:none;border-radius:2px;cursor:pointer;font-size:.875rem;font-weight:600;background:var(--bg-base);color:var(--color-base);">
+        <i class="fa-brands fa-wikipedia-w"></i> Wikimedia OAuth
+      </button>
+      <button id="tab-botpass" onclick="switchTab('botpass')"
+        style="flex:1;padding:.5rem;border:none;border-radius:2px;cursor:pointer;font-size:.875rem;font-weight:500;background:transparent;color:var(--color-subtle);">
+        <i class="fa-solid fa-robot"></i> BotPassword
+      </button>
+    </div>
+
+    {# ── OAuth tab (shown first — recommended, works on Toolforge) ── #}
+    <div id="content-oauth">
+      <h2 style="margin:0 0 .5rem;font-size:1.125rem;font-weight:700;">Sign in with Wikimedia</h2>
+      <p style="margin:0 0 1rem;font-size:.875rem;color:var(--color-subtle);line-height:1.6;">
+        The recommended way to use WikiScriptSync.
+        Verifies your Wikimedia identity — reads your username and account groups only.
+        Script Publisher will <strong>not</strong> edit any pages via OAuth.
+      </p>
+
+      {# Show warning on localhost — OAuth callback only works on Toolforge #}
+      <div id="localDevWarning" class="sp-notice sp-notice--warning" style="margin-bottom:1.25rem;display:none;">
+        <i class="fa-solid fa-triangle-exclamation" style="flex-shrink:0;margin-top:.1rem;"></i>
+        <div style="font-size:.8125rem;">
+          <strong>Running locally.</strong>
+          OAuth only works on the live Toolforge deployment because the registered callback URL is
+          <span class="sp-mono" style="font-size:.75rem;">https://script-publisher.toolforge.org/api/auth/callback</span>.
+          <br>For local testing, use the <strong>BotPassword tab</strong> instead.
+        </div>
+      </div>
+
+      <a href="{% url 'oauth_redirect' %}"
+        id="oauthBtn"
+        style="display:flex;align-items:center;justify-content:center;gap:.875rem;width:100%;padding:.875rem 1rem;border:1px solid var(--border-color);border-radius:4px;font-size:1rem;font-weight:600;color:var(--color-base);background:var(--bg-base);text-decoration:none;transition:background .1s;">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/Wikimedia-logo.svg/1024px-Wikimedia-logo.svg.png"
+             style="width:22px;height:22px;" alt="Wikimedia" />
+        Continue with Wikimedia
+      </a>
+      <p style="margin:.75rem 0 0;font-size:.8125rem;text-align:center;color:var(--color-placeholder);">
+        Redirects to <span class="sp-mono">meta.wikimedia.org</span> · Works on <span class="sp-mono">script-publisher.toolforge.org</span>
+      </p>
+    </div>
+
+    {# ── BotPassword tab ── #}
+    <div id="content-botpass" style="display:none;">
+      <h2 style="margin:0 0 .5rem;font-size:1.125rem;font-weight:700;">BotPassword login</h2>
+      <p style="margin:0 0 1.25rem;font-size:.875rem;color:var(--color-subtle);line-height:1.6;">
+        For local development and direct publishing.
+        Create a BotPassword at
+        <a href="https://www.mediawiki.org/wiki/Manual:Bot_passwords" target="_blank" rel="noopener">Special:BotPasswords</a>
+        on your target wiki. Credentials are never stored in the database.
+      </p>
+      <form method="POST" action="{% url 'get_started' %}">
+        {% csrf_token %}
+        <input type="hidden" name="auth_type" value="botpassword" />
+        <div class="sp-field">
+          <label class="sp-label">
+            Bot username
+            <span style="font-size:.8125rem;font-weight:400;color:var(--color-subtle);">e.g. Dev_Jadiya@my-bot</span>
+          </label>
+          <input type="text" name="bot_username" class="sp-input"
+                 placeholder="Username@bot-name" autocomplete="username" required />
+        </div>
+        <div class="sp-field">
+          <label class="sp-label">
+            Bot password
+            <span style="font-size:.8125rem;font-weight:400;color:var(--color-subtle);">generated at Special:BotPasswords</span>
+          </label>
+          <input type="password" name="bot_password" class="sp-input"
+                 placeholder="••••••••••••••••" autocomplete="current-password" required />
+        </div>
+        <div class="sp-field" style="margin-bottom:1.25rem;">
+          <label class="sp-label">
+            Your Wikimedia username
+            <span style="font-size:.8125rem;font-weight:400;color:var(--color-subtle);">for the audit log</span>
+          </label>
+          <input type="text" name="wiki_username" class="sp-input"
+                 placeholder="Dev Jadiya" required />
+        </div>
+        <button type="submit" class="sp-btn sp-btn--primary"
+                style="width:100%;justify-content:center;padding:.75rem;font-size:1rem;">
+          <i class="fa-solid fa-right-to-bracket"></i> Continue
+        </button>
+      </form>
+    </div>
+
+  </div>
+
+  <p style="margin-top:1.5rem;font-size:.875rem;color:var(--color-subtle);text-align:center;">
+    New here?
+    <a href="https://meta.wikimedia.org/wiki/Community_Wishlist_Survey_2022/Bots_and_gadgets/A_bot_or_gadget_to_publish_public_Git_repo_to_a_gadget_or_user_script"
+       target="_blank" rel="noopener">Learn about this tool</a>
+  </p>
+</div>
+
+<script>
+function switchTab(tab) {
+  const isOAuth = tab === 'oauth';
+  document.getElementById('content-oauth').style.display   = isOAuth ? 'block' : 'none';
+  document.getElementById('content-botpass').style.display = isOAuth ? 'none'  : 'block';
+  const act = {background:'var(--bg-base)',   color:'var(--color-base)',   fontWeight:'600'};
+  const ina = {background:'transparent',      color:'var(--color-subtle)', fontWeight:'500'};
+  Object.assign(document.getElementById('tab-oauth').style,   isOAuth ? act : ina);
+  Object.assign(document.getElementById('tab-botpass').style, isOAuth ? ina : act);
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  const isLocal = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (isLocal) {
+    document.getElementById('localDevWarning').style.display = 'flex';
+    // Disable the OAuth button on localhost so users don't get confused
+    const btn = document.getElementById('oauthBtn');
+    btn.style.opacity      = '0.5';
+    btn.style.pointerEvents = 'none';
+    btn.title = 'OAuth only works on the live Toolforge deployment';
+  }
+});
+</script>
+{% endblock %}

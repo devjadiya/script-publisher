@@ -1,0 +1,88 @@
+{% extends 'base.html' %}
+{% block content %}
+<div style="background:var(--bg-base);border-bottom:1px solid var(--border-color);padding:4rem 0 3rem;">
+  <div class="sp-container" style="text-align:center;padding-top:0;padding-bottom:0;">
+    <div style="display:inline-flex;align-items:center;gap:.75rem;margin-bottom:1.5rem;">
+      <div style="width:48px;height:48px;background:var(--wmf-blue);border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.4rem;">
+        <i class="fa-solid fa-code-branch"></i>
+      </div>
+      <h1 style="margin:0;font-size:2rem;font-weight:700;">WikiScriptSync</h1>
+    </div>
+    <p style="max-width:560px;margin:0 auto 2rem;font-size:1.0625rem;color:var(--color-subtle);line-height:1.7;">
+      Synchronize JavaScript and CSS gadgets from public Git repositories
+      to Wikimedia wikis — with diff review, audit logging, and change notifications.
+    </p>
+    <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;">
+      <a href="{% url 'get_started' %}" class="sp-btn sp-btn--primary" style="font-size:1rem;padding:.625rem 1.5rem;">
+        Get started <i class="fa-solid fa-arrow-right" style="font-size:.875rem;"></i>
+      </a>
+      <a href="https://meta.wikimedia.org/wiki/Community_Wishlist_Survey_2022/Bots_and_gadgets/A_bot_or_gadget_to_publish_public_Git_repo_to_a_gadget_or_user_script"
+         target="_blank" rel="noopener" class="sp-btn" style="font-size:1rem;padding:.625rem 1.5rem;">
+        <i class="fa-solid fa-file-lines" style="font-size:.875rem;"></i> Wishlist proposal
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="sp-container">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;margin-bottom:2.5rem;">
+
+    <div class="sp-card"><div class="sp-card__body">
+      <div style="width:36px;height:36px;background:var(--wmf-blue-light);border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:.875rem;">
+        <i class="fa-solid fa-upload" style="color:var(--wmf-blue);font-size:.9rem;"></i>
+      </div>
+      <h3 style="margin:0 0 .5rem;font-size:1rem;">1. Connect repository</h3>
+      <p style="margin:0;font-size:.875rem;color:var(--color-subtle);line-height:1.6;">
+        Enter a public GitHub or GitLab URL. Files are fetched directly via the platform API
+        — no third-party services.
+      </p>
+    </div></div>
+
+    <div class="sp-card"><div class="sp-card__body">
+      <div style="width:36px;height:36px;background:var(--wmf-blue-light);border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:.875rem;">
+        <i class="fa-solid fa-diagram-project" style="color:var(--wmf-blue);font-size:.9rem;"></i>
+      </div>
+      <h3 style="margin:0 0 .5rem;font-size:1rem;">2. Map to wiki pages</h3>
+      <p style="margin:0;font-size:.875rem;color:var(--color-subtle);line-height:1.6;">
+        Map each file to a destination page such as
+        <span class="sp-mono">User:You/script.js</span> or
+        <span class="sp-mono">MediaWiki:Gadget-Name.js</span>.
+      </p>
+    </div></div>
+
+    <div class="sp-card"><div class="sp-card__body">
+      <div style="width:36px;height:36px;background:var(--wmf-blue-light);border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:.875rem;">
+        <i class="fa-solid fa-bell" style="color:var(--wmf-blue);font-size:.9rem;"></i>
+      </div>
+      <h3 style="margin:0 0 .5rem;font-size:1rem;">3. Get notified of changes</h3>
+      <p style="margin:0;font-size:.875rem;color:var(--color-subtle);line-height:1.6;">
+        When the source repository changes, you receive a talk-page notification
+        so you can review and decide whether to update.
+      </p>
+    </div></div>
+
+  </div>
+
+  <div class="sp-card">
+    <div class="sp-card__body" style="display:flex;align-items:flex-start;gap:1rem;">
+      <i class="fa-solid fa-shield-halved" style="color:var(--wmf-blue);font-size:1.2rem;margin-top:.15rem;flex-shrink:0;"></i>
+      <div>
+        <h3 style="margin:0 0 .375rem;font-size:1rem;">You are always in control</h3>
+        <p style="margin:0;font-size:.875rem;color:var(--color-subtle);line-height:1.6;">
+          WikiScriptSync never edits wiki pages automatically. The notification flow alerts you
+          to upstream changes and lets you review the diff before deciding to publish.
+          Publishing is done either via your own BotPassword or a pre-filled edit URL you open yourself.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:1rem 0 2rem;font-size:.8125rem;color:var(--color-subtle);">
+    <a href="https://gitlab.wikimedia.org/toolforge-repos/script-publisher" target="_blank" rel="noopener">Source code (GitLab)</a>
+    &nbsp;·&nbsp;
+    <a href="https://meta.wikimedia.org/wiki/User_talk:Dev_Jadiya#Script_Publisher" target="_blank" rel="noopener">Community discussion</a>
+    &nbsp;·&nbsp;
+    <a href="https://script-publisher.toolforge.org/" target="_blank" rel="noopener">Toolforge deployment</a>
+  </div>
+</div>
+{% endblock %}

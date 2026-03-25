@@ -1,0 +1,64 @@
+{% extends 'base_dashboard.html' %}
+{% block dashboard_content %}
+<h1 class="sp-page-title">Settings</h1>
+<p class="sp-page-subtitle">Your WikiScriptSync account information.</p>
+
+<div class="sp-card" style="margin-bottom:1.25rem;">
+  <div class="sp-card__header">Account</div>
+  <div class="sp-card__body">
+    <table style="width:100%;font-size:.875rem;border-collapse:collapse;">
+      <tr>
+        <td style="padding:.5rem 0;color:var(--color-subtle);width:180px;">Wikimedia username</td>
+        <td style="padding:.5rem 0;font-weight:500;">{{ current_user.username }}</td>
+      </tr>
+      <tr>
+        <td style="padding:.5rem 0;color:var(--color-subtle);">Interface admin</td>
+        <td style="padding:.5rem 0;">
+          {% if current_user.is_interface_admin %}
+          <span class="sp-badge sp-badge--success"><i class="fa-solid fa-check"></i> Yes</span>
+          {% else %}
+          <span class="sp-badge sp-badge--neutral">No</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:.5rem 0;color:var(--color-subtle);">Groups</td>
+        <td style="padding:.5rem 0;font-size:.8125rem;color:var(--color-subtle);">
+          {{ current_user.groups|join:", "|default:"(none)" }}
+        </td>
+      </tr>
+    </table>
+    <div style="margin-top:1rem;">
+      <a href="{% url 'logout' %}" class="sp-btn" style="color:var(--wmf-red);border-color:var(--wmf-red);">
+        <i class="fa-solid fa-right-from-bracket"></i> Log out
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="sp-card">
+  <div class="sp-card__header">About WikiScriptSync</div>
+  <div class="sp-card__body" style="font-size:.875rem;color:var(--color-subtle);line-height:1.7;">
+    <p style="margin:0 0 .75rem;">
+      WikiScriptSync is a <a href="https://meta.wikimedia.org/wiki/Toolforge" target="_blank" rel="noopener">Toolforge</a>
+      application built as part of the
+      <a href="https://meta.wikimedia.org/wiki/Developer_Skill_Development_Program_India_2025" target="_blank" rel="noopener">Developer Skill Development Program India 2025</a>,
+      implementing the
+      <a href="https://meta.wikimedia.org/wiki/Community_Wishlist_Survey_2022/Bots_and_gadgets/A_bot_or_gadget_to_publish_public_Git_repo_to_a_gadget_or_user_script" target="_blank" rel="noopener">Community Wishlist Survey 2022</a>
+      proposal.
+    </p>
+    <p style="margin:0 0 .75rem;">
+      The tool uses OAuth only for identity verification. All wiki edits are made either
+      via the user's own BotPassword or a pre-filled edit URL the user submits themselves.
+      The notification bot posts talk-page messages to alert users of upstream changes
+      — it never auto-publishes.
+    </p>
+    <p style="margin:0;">
+      Source code:
+      <a href="https://gitlab.wikimedia.org/toolforge-repos/script-publisher" target="_blank" rel="noopener" class="sp-mono">
+        gitlab.wikimedia.org/toolforge-repos/script-publisher
+      </a>
+    </p>
+  </div>
+</div>
+{% endblock %}

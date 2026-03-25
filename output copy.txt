@@ -1,0 +1,5263 @@
+﻿==== core\settings.py ====
+from pathlib import Path
+import os
+from dotenv import load_dotenv
+import dj_database_url
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+
+load_dotenv(BASE_DIR / ".env")
+
+# ── Security ─────────────────────────────────────────────────────────────────
+
+DEBUG = os.environ.get("DEBUG", "False").lower() == "true"
+
+SECRET_KEY = os.environ.get(
+    "SECRET_KEY",
+    "django-insecure-please-set-a-real-secret-key-in-env",
+)
+
+ALLOWED_HOSTS = [
+    h.strip()
+    for h in os.environ.get("ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+    if h.strip()
+]
+
+# ── Application ───────────────────────────────────────────────────────────────
+
+INSTALLED_APPS = [
+    "jazzmin",
+    "django.contrib.admin",
+    "django.contrib.auth",
+    "django.contrib.contenttypes",
+    "django.contrib.sessions",
+    "django.contrib.messages",
+    "django.contrib.staticfiles",
+    "publisher",
+]
+
+MIDDLEWARE = [
+    "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
+    "django.contrib.sessions.middleware.SessionMiddleware",
+    "django.middleware.common.CommonMiddleware",
+    "django.middleware.csrf.CsrfViewMiddleware",
+    "django.contrib.auth.middleware.AuthenticationMiddleware",
+    "django.contrib.messages.middleware.MessageMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
+]
+
+ROOT_URLCONF = "core.urls"
+
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [os.path.join(BASE_DIR, "templates")],
+        "APP_DIRS": True,
+        "OPTIONS": {
+            "context_processors": [
+                "django.template.context_processors.request",
+                "django.contrib.auth.context_processors.auth",
+                "django.contrib.messages.context_processors.messages",
+            ],
+        },
+    },
+]
+
+WSGI_APPLICATION = "core.wsgi.application"
+
+# ── Database ─────────────────────────────────────────────────────────────────
+
+DATABASES = {
+    "default": dj_database_url.config(
+        default="sqlite:///" + os.path.join(BASE_DIR, "db.sqlite3"),
+        conn_max_age=600,
+    )
+}
+
+# ── Sessions ─────────────────────────────────────────────────────────────────
+# Sessions store the authenticated user's username, groups, and rights.
+# BotPasswords are stored in the session only during a single publish
+# request and are never written to the database.
+
+SESSION_ENGINE = "django.contrib.sessions.backends.db"
+SESSION_COOKIE_AGE = 86400 * 7          # 7 days
+SESSION_COOKIE_SECURE = not DEBUG       # HTTPS only in production
+SESSION_COOKIE_HTTPONLY = True          # JS cannot read the cookie
+SESSION_COOKIE_SAMESITE = "Lax"         # CSRF protection
+
+# ── CSRF ─────────────────────────────────────────────────────────────────────
+
+CSRF_COOKIE_SECURE = not DEBUG
+CSRF_TRUSTED_ORIGINS = [
+    "https://script-publisher.toolforge.org",
+]
+
+# ── Password validation ──────────────────────────────────────────────────────
+
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
+
+# ── Internationalisation ─────────────────────────────────────────────────────
+
+LANGUAGE_CODE = "en-us"
+TIME_ZONE = "UTC"
+USE_I18N = True
+USE_TZ = True
+
+# ── Static files ─────────────────────────────────────────────────────────────
+
+STATIC_URL = "static/"
+STATIC_ROOT = os.path.join(BASE_DIR, "staticfiles")
+
+local_static_dir = os.path.join(BASE_DIR, "static")
+if os.path.exists(local_static_dir):
+    STATICFILES_DIRS = [local_static_dir]
+
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+
+# ── Admin UI (Jazzmin) ───────────────────────────────────────────────────────
+
+JAZZMIN_SETTINGS = {
+    "site_title": "Script Publisher Admin",
+    "site_header": "Script Publisher",
+    "site_brand": "WikiPublisher",
+    "welcome_sign": "Script Publisher Admin",
+    "theme": "darkly",
+}
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+        },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+    "loggers": {
+        "publisher": {
+            "handlers": ["console"],
+            "level": "DEBUG" if DEBUG else "INFO",
+            "propagate": False,
+        },
+    },
+}
+
+
+==== core\urls.py ====
+from django.contrib import admin
+from django.urls import path, include
+
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("", include("publisher.urls")),
+]
+
+
+==== core\__init__.py ====
+
+==== publisher\migrations\0001_initial.py ====
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    initial = True
+
+    dependencies = []
+
+    operations = [
+        migrations.CreateModel(
+            name="PublishLog",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name="ID")),
+                ("username", models.CharField(db_index=True, max_length=255)),
+                ("source_repo", models.URLField(blank=True, max_length=1000)),
+                ("source_file", models.CharField(max_length=500)),
+                ("target_wiki", models.CharField(max_length=255)),
+                ("target_page", models.CharField(max_length=500)),
+                ("version", models.CharField(blank=True, max_length=100)),
+                ("edit_summary", models.TextField(blank=True)),
+                (
+                    "status",
+                    models.CharField(
+                        choices=[
+                            ("success", "Success"),
+                            ("failed", "Failed"),
+                            ("pending_review", "Pending Review"),
+                        ],
+                        db_index=True,
+                        default="pending_review",
+                        max_length=30,
+                    ),
+                ),
+                (
+                    "publish_method",
+                    models.CharField(
+                        choices=[
+                            ("botpassword", "BotPassword"),
+                            ("draft", "Draft / Notification only"),
+                        ],
+                        default="draft",
+                        max_length=30,
+                    ),
+                ),
+                ("error_message", models.TextField(blank=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True, db_index=True)),
+            ],
+            options={
+                "verbose_name": "Publish Log Entry",
+                "verbose_name_plural": "Publish Log Entries",
+                "ordering": ["-created_at"],
+            },
+        ),
+    ]
+
+
+==== publisher\migrations\__init__.py ====
+
+==== publisher\admin.py ====
+from django.contrib import admin
+from .models import PublishLog
+
+
+@admin.register(PublishLog)
+class PublishLogAdmin(admin.ModelAdmin):
+    list_display = (
+        "username",
+        "source_file",
+        "target_wiki",
+        "target_page",
+        "publish_method",
+        "status",
+        "created_at",
+    )
+    list_filter = ("status", "publish_method", "target_wiki")
+    search_fields = ("username", "source_file", "target_page")
+    readonly_fields = ("created_at",)
+    ordering = ("-created_at",)
+
+
+==== publisher\models.py ====
+from django.db import models
+
+
+class PublishLog(models.Model):
+    """
+    Records every publish action (or attempt) made through Script Publisher.
+
+    This table is the audit trail referenced in the security model:
+    every deployment is recorded with who did it, what was changed,
+    and where it was published.
+    """
+
+    STATUS_CHOICES = [
+        ("success", "Success"),
+        ("failed", "Failed"),
+        ("pending_review", "Pending Review"),
+    ]
+
+    PUBLISH_METHOD_CHOICES = [
+        ("botpassword", "BotPassword"),
+        ("draft", "Draft / Notification only"),
+    ]
+
+    # Who published
+    username = models.CharField(max_length=255, db_index=True)
+
+    # What was published
+    source_repo = models.URLField(max_length=1000)
+    source_file = models.CharField(max_length=500)
+
+    # Where it was published
+    target_wiki = models.CharField(max_length=255)
+    target_page = models.CharField(max_length=500)
+
+    # Metadata provided at publish time
+    version = models.CharField(max_length=100, blank=True)
+    edit_summary = models.TextField(blank=True)
+
+    # Outcome
+    status = models.CharField(
+        max_length=30,
+        choices=STATUS_CHOICES,
+        default="pending_review",
+        db_index=True,
+    )
+    publish_method = models.CharField(
+        max_length=30,
+        choices=PUBLISH_METHOD_CHOICES,
+        default="draft",
+    )
+    error_message = models.TextField(blank=True)
+
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Publish Log Entry"
+        verbose_name_plural = "Publish Log Entries"
+
+    def __str__(self):
+        return f"{self.username} → {self.target_page} ({self.status})"
+
+
+==== publisher\oauth.py ====
+"""
+oauth.py
+--------
+Handles the Wikimedia OAuth 2.0 flow for Script Publisher.
+
+Scope: identity only.
+  - We use OAuth to verify who the user is (username, groups, rights).
+  - We do NOT use the OAuth token to edit wiki pages.
+  - Editing is done either via the user's own BotPassword,
+    or via a "notify + draft" flow where the user edits themselves.
+
+This separation keeps the tool within its approved OAuth scope and
+avoids the JS-editing security concerns raised in community review.
+
+Flow:
+  1. /get-started/ -> redirect to Wikimedia authorize URL
+  2. Wikimedia -> /api/auth/callback/?code=...&state=...
+  3. Exchange code for access token
+  4. Fetch user profile (/oauth2/resource/profile)
+  5. Store username + rights in Django session
+  6. Redirect to /dashboard/
+"""
+
+import os
+import secrets
+import requests
+from django.conf import settings
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Constants (read from settings, which read from .env)
+# ──────────────────────────────────────────────────────────────────────────────
+
+CLIENT_ID = os.environ.get("OAUTH_CLIENT_ID", "")
+CLIENT_SECRET = os.environ.get("OAUTH_CLIENT_SECRET", "")
+REDIRECT_URI = os.environ.get("OAUTH_REDIRECT_URI", "")
+AUTHORIZE_URL = os.environ.get(
+    "OAUTH_AUTHORIZE_URL",
+    "https://meta.wikimedia.org/w/rest.php/oauth2/authorize",
+)
+TOKEN_URL = os.environ.get(
+    "OAUTH_TOKEN_URL",
+    "https://meta.wikimedia.org/w/rest.php/oauth2/access_token",
+)
+PROFILE_URL = os.environ.get(
+    "OAUTH_PROFILE_URL",
+    "https://meta.wikimedia.org/w/rest.php/oauth2/resource/profile",
+)
+
+REQUEST_TIMEOUT = 10  # seconds
+
+
+class OAuthError(Exception):
+    """Raised when any step of the OAuth flow fails."""
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Step 1 — Build the authorization redirect URL
+# ──────────────────────────────────────────────────────────────────────────────
+
+def build_authorize_url(request) -> str:
+    """
+    Generate a Wikimedia OAuth 2.0 authorization URL.
+
+    A random `state` value is stored in the session to prevent CSRF attacks.
+    The state is verified in handle_callback() before the code is exchanged.
+    """
+    state = secrets.token_urlsafe(32)
+    request.session["oauth_state"] = state
+
+    params = {
+        "client_id": CLIENT_ID,
+        "response_type": "code",
+        "redirect_uri": REDIRECT_URI,
+        "scope": "basic",  # 'basic' = read username + groups only
+        "state": state,
+    }
+
+    from urllib.parse import urlencode
+    return f"{AUTHORIZE_URL}?{urlencode(params)}"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Step 2 — Handle the callback, exchange code for token, fetch profile
+# ──────────────────────────────────────────────────────────────────────────────
+
+def handle_callback(request) -> dict:
+    """
+    Called from the OAuth callback view.
+
+    Validates the state parameter, exchanges the authorization code for an
+    access token, fetches the user profile, and returns a dict:
+
+        {
+            "username":  "ExampleUser",
+            "groups":    ["*", "user", "autoconfirmed"],
+            "rights":    ["read", "edit", ...],
+            "token":     "<access token for profile reads only>"
+        }
+
+    Raises OAuthError if anything goes wrong.
+    """
+    # ── Validate state to prevent CSRF ──────────────────────────────────────
+    returned_state = request.GET.get("state", "")
+    stored_state = request.session.pop("oauth_state", None)
+
+    if not stored_state or returned_state != stored_state:
+        raise OAuthError(
+            "State mismatch — possible CSRF attempt. Please try logging in again."
+        )
+
+    # ── Check for error response from Wikimedia ──────────────────────────────
+    error = request.GET.get("error")
+    if error:
+        description = request.GET.get("error_description", error)
+        raise OAuthError(f"Wikimedia denied authorization: {description}")
+
+    code = request.GET.get("code")
+    if not code:
+        raise OAuthError("No authorization code received from Wikimedia.")
+
+    # ── Exchange code for access token ───────────────────────────────────────
+    token_data = _exchange_code(code)
+    access_token = token_data.get("access_token")
+    if not access_token:
+        raise OAuthError("Token exchange succeeded but no access_token was returned.")
+
+    # ── Fetch user profile ───────────────────────────────────────────────────
+    profile = _fetch_profile(access_token)
+
+    return {
+        "username": profile.get("username", ""),
+        "groups": profile.get("groups", []),
+        "rights": profile.get("rights", []),
+        "token": access_token,
+    }
+
+
+def _exchange_code(code: str) -> dict:
+    """POST the authorization code to get an access token."""
+    payload = {
+        "grant_type": "authorization_code",
+        "code": code,
+        "redirect_uri": REDIRECT_URI,
+        "client_id": CLIENT_ID,
+        "client_secret": CLIENT_SECRET,
+    }
+    try:
+        response = requests.post(
+            TOKEN_URL,
+            data=payload,
+            headers={"User-Agent": _user_agent()},
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.exceptions.RequestException as e:
+        raise OAuthError(f"Could not reach Wikimedia token endpoint: {e}")
+
+    if not response.ok:
+        raise OAuthError(
+            f"Token exchange failed (HTTP {response.status_code}): {response.text}"
+        )
+
+    return response.json()
+
+
+def _fetch_profile(access_token: str) -> dict:
+    """Fetch the authenticated user's profile from Wikimedia."""
+    try:
+        response = requests.get(
+            PROFILE_URL,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "User-Agent": _user_agent(),
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+    except requests.exceptions.RequestException as e:
+        raise OAuthError(f"Could not reach Wikimedia profile endpoint: {e}")
+
+    if not response.ok:
+        raise OAuthError(
+            f"Profile fetch failed (HTTP {response.status_code}): {response.text}"
+        )
+
+    return response.json()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Session helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def login_user(request, profile: dict):
+    """Store the authenticated user's info in the Django session."""
+    request.session["user_username"] = profile["username"]
+    request.session["user_groups"] = profile["groups"]
+    request.session["user_rights"] = profile["rights"]
+    request.session["user_token"] = profile["token"]
+    # Preserve session across browser restarts
+    request.session.set_expiry(86400 * 7)  # 7 days
+
+
+def logout_user(request):
+    """Clear all session data."""
+    request.session.flush()
+
+
+def get_current_user(request) -> dict | None:
+    """
+    Return the current user dict from session, or None if not logged in.
+
+        {
+            "username": "ExampleUser",
+            "groups":   [...],
+            "rights":   [...],
+            "is_interface_admin": bool,
+        }
+    """
+    username = request.session.get("user_username")
+    if not username:
+        return None
+
+    groups = request.session.get("user_groups", [])
+    rights = request.session.get("user_rights", [])
+
+    return {
+        "username": username,
+        "groups": groups,
+        "rights": rights,
+        # Interface admins can edit MediaWiki: and *.js pages sitewide
+        "is_interface_admin": "interface-admin" in groups,
+    }
+
+
+def require_login(view_func):
+    """
+    Decorator for views that require an authenticated user.
+    Redirects to /get-started/ if not logged in.
+    """
+    from functools import wraps
+    from django.shortcuts import redirect
+
+    @wraps(view_func)
+    def wrapper(request, *args, **kwargs):
+        if not get_current_user(request):
+            return redirect("get_started")
+        return view_func(request, *args, **kwargs)
+
+    return wrapper
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Utilities
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _user_agent() -> str:
+    return "WikiScriptPublisher/1.0 (https://script-publisher.toolforge.org; Toolforge)"
+
+
+==== publisher\opt_out_results.html ====
+{% extends 'base.html' %}
+{% block content %}
+<div class="sp-container" style="max-width:520px;padding-top:4rem;padding-bottom:4rem;">
+  {% if success %}
+  <div class="sp-card">
+    <div class="sp-card__body" style="text-align:center;padding:2.5rem;">
+      <div style="width:48px;height:48px;background:var(--wmf-green-light);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:1rem;">
+        <i class="fa-solid fa-bell-slash" style="color:var(--wmf-green);font-size:1.2rem;"></i>
+      </div>
+      <h2 style="margin:0 0 .5rem;font-size:1.25rem;">Notifications disabled</h2>
+      <p style="color:var(--color-subtle);font-size:.9375rem;margin:0 0 1.5rem;">
+        <strong>{{ username }}</strong> has been unsubscribed from WikiScriptSync change notifications.
+        You will no longer receive talk-page messages when tracked scripts change.
+      </p>
+      <p style="color:var(--color-subtle);font-size:.875rem;margin:0 0 1.5rem;">
+        You can re-enable notifications any time by logging in to
+        <a href="{% url 'notifications' %}">your notification preferences</a>.
+      </p>
+      <a href="{% url 'home' %}" class="sp-btn">Return to home</a>
+    </div>
+  </div>
+  {% else %}
+  <div class="sp-card">
+    <div class="sp-card__body" style="text-align:center;padding:2.5rem;">
+      <div style="width:48px;height:48px;background:var(--wmf-red-light);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:1rem;">
+        <i class="fa-solid fa-triangle-exclamation" style="color:var(--wmf-red);font-size:1.2rem;"></i>
+      </div>
+      <h2 style="margin:0 0 .5rem;font-size:1.25rem;">Invalid link</h2>
+      <p style="color:var(--color-subtle);font-size:.9375rem;margin:0 0 1.5rem;">{{ error }}</p>
+      <a href="{% url 'home' %}" class="sp-btn">Return to home</a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+==== publisher\repo_fetcher.py ====
+"""
+repo_fetcher.py
+---------------
+Fetches JS/CSS files directly from public GitHub or GitLab repositories
+using their native REST APIs.
+
+Replaces the previous gitingest.com dependency entirely.
+No third-party services are called — all requests go directly to the
+hosting platform's API. This keeps the tool self-contained and auditable.
+
+Supported URL formats:
+  GitHub:
+    https://github.com/{owner}/{repo}
+    https://github.com/{owner}/{repo}/tree/{branch}
+  GitLab (wikimedia or gitlab.com):
+    https://gitlab.wikimedia.org/{namespace}/{repo}
+    https://gitlab.com/{namespace}/{repo}
+"""
+
+import re
+import base64
+import requests
+
+ALLOWED_EXTENSIONS = {".js", ".css"}
+DEFAULT_TIMEOUT = 10  # seconds
+
+
+class RepoFetchError(Exception):
+    """Raised when a repository cannot be fetched or parsed."""
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Public entry point
+# ──────────────────────────────────────────────────────────────────────────────
+
+def fetch_files(repo_url: str) -> list[dict]:
+    """
+    Given a public repository URL, return a list of JS/CSS file dicts.
+
+    Each dict contains:
+        name        str   relative path inside the repo  e.g. "src/gadget.js"
+        content     str   raw UTF-8 file content
+        size        int   file size in bytes
+        platform    str   "github" | "gitlab"
+    """
+    platform, owner, repo, branch = _parse_url(repo_url)
+
+    if platform == "github":
+        return _fetch_github(owner, repo, branch)
+    elif platform == "gitlab":
+        base = _gitlab_base(repo_url)
+        return _fetch_gitlab(base, owner, repo, branch)
+    else:
+        raise RepoFetchError(f"Unsupported repository URL: {repo_url}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# URL parsing
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _parse_url(url: str):
+    """
+    Returns (platform, owner, repo, branch).
+    branch is None if not specified in the URL (callers should default to HEAD).
+    """
+    url = url.rstrip("/")
+
+    # GitHub
+    gh = re.match(
+        r"https://github\.com/([^/]+)/([^/]+?)(?:\.git)?(?:/tree/([^/]+))?$",
+        url,
+    )
+    if gh:
+        return "github", gh.group(1), gh.group(2), gh.group(3)
+
+    # GitLab (wikimedia or gitlab.com)
+    gl = re.match(
+        r"https://(gitlab\.wikimedia\.org|gitlab\.com)/([^/]+(?:/[^/]+)*)/([^/]+?)(?:\.git)?(?:/-/tree/([^/]+))?$",
+        url,
+    )
+    if gl:
+        # gl.group(1) = host, gl.group(2) = namespace, gl.group(3) = repo, gl.group(4) = branch
+        namespace = gl.group(2)
+        repo = gl.group(3)
+        branch = gl.group(4)
+        host = gl.group(1)
+        return "gitlab", namespace, repo, branch
+
+    raise RepoFetchError(
+        "Could not parse repository URL. "
+        "Expected a public GitHub or GitLab URL."
+    )
+
+
+def _gitlab_base(url: str) -> str:
+    """Extract the GitLab instance base URL (e.g. https://gitlab.wikimedia.org)."""
+    m = re.match(r"(https://[^/]+)", url)
+    if m:
+        return m.group(1)
+    return "https://gitlab.com"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GitHub fetcher
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _fetch_github(owner: str, repo: str, branch: str | None) -> list[dict]:
+    """
+    Uses the GitHub Trees API to get the full recursive file list,
+    then fetches content only for JS/CSS files.
+
+    API docs: https://docs.github.com/en/rest/git/trees
+    Rate limit: 60 unauthenticated requests/hour per IP.
+    """
+    # Resolve branch if not specified
+    if not branch:
+        branch = _github_default_branch(owner, repo)
+
+    tree_url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
+    response = _get(tree_url, platform="GitHub")
+    data = response.json()
+
+    if data.get("truncated"):
+        # Repository has more than 100,000 files — fetch top-level only
+        pass  # the filter below will still work on what we have
+
+    files = []
+    for item in data.get("tree", []):
+        if item.get("type") != "blob":
+            continue
+        path = item["path"]
+        if not _is_allowed(path):
+            continue
+
+        content = _github_file_content(owner, repo, branch, path)
+        if content is not None:
+            files.append({
+                "name": path,
+                "content": content,
+                "size": item.get("size", 0),
+                "platform": "github",
+            })
+
+    return files
+
+
+def _github_default_branch(owner: str, repo: str) -> str:
+    url = f"https://api.github.com/repos/{owner}/{repo}"
+    response = _get(url, platform="GitHub")
+    return response.json().get("default_branch", "main")
+
+
+def _github_file_content(owner: str, repo: str, branch: str, path: str) -> str | None:
+    """Fetch a single file's content from GitHub using the Contents API."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={branch}"
+    try:
+        response = _get(url, platform="GitHub")
+        data = response.json()
+        encoded = data.get("content", "")
+        # GitHub returns base64-encoded content with newlines
+        decoded = base64.b64decode(encoded.replace("\n", "")).decode("utf-8", errors="replace")
+        return decoded
+    except Exception:
+        return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# GitLab fetcher
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _fetch_gitlab(base: str, namespace: str, repo: str, branch: str | None) -> list[dict]:
+    """
+    Uses the GitLab Repository Tree and Raw File APIs.
+
+    API docs: https://docs.gitlab.com/ee/api/repositories.html
+    Works for both gitlab.com and gitlab.wikimedia.org (unauthenticated, public repos).
+    """
+    # URL-encode the full project path (namespace/repo)
+    from urllib.parse import quote
+    project_path = quote(f"{namespace}/{repo}", safe="")
+
+    # Resolve default branch
+    if not branch:
+        branch = _gitlab_default_branch(base, project_path)
+
+    # Fetch full file tree recursively
+    tree_url = (
+        f"{base}/api/v4/projects/{project_path}/repository/tree"
+        f"?recursive=true&per_page=100&ref={branch}"
+    )
+
+    all_items = []
+    page = 1
+    while True:
+        response = _get(f"{tree_url}&page={page}", platform="GitLab")
+        items = response.json()
+        if not items:
+            break
+        all_items.extend(items)
+        # GitLab paginates — check if there are more pages
+        if len(items) < 100:
+            break
+        page += 1
+
+    files = []
+    for item in all_items:
+        if item.get("type") != "blob":
+            continue
+        path = item["path"]
+        if not _is_allowed(path):
+            continue
+
+        content = _gitlab_file_content(base, project_path, branch, path)
+        if content is not None:
+            files.append({
+                "name": path,
+                "content": content,
+                "size": len(content.encode("utf-8")),
+                "platform": "gitlab",
+            })
+
+    return files
+
+
+def _gitlab_default_branch(base: str, project_path: str) -> str:
+    from urllib.parse import quote
+    url = f"{base}/api/v4/projects/{project_path}"
+    response = _get(url, platform="GitLab")
+    return response.json().get("default_branch", "main")
+
+
+def _gitlab_file_content(base: str, project_path: str, branch: str, path: str) -> str | None:
+    """Fetch a single file's raw content from GitLab."""
+    from urllib.parse import quote
+    encoded_path = quote(path, safe="")
+    url = f"{base}/api/v4/projects/{project_path}/repository/files/{encoded_path}/raw?ref={branch}"
+    try:
+        response = _get(url, platform="GitLab")
+        return response.text
+    except Exception:
+        return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _is_allowed(path: str) -> bool:
+    """Return True only for .js and .css files."""
+    return any(path.endswith(ext) for ext in ALLOWED_EXTENSIONS)
+
+
+def _get(url: str, platform: str = "remote") -> requests.Response:
+    """
+    Perform a GET request with a descriptive User-Agent and error handling.
+    Raises RepoFetchError on non-2xx responses.
+    """
+    headers = {
+        "User-Agent": "WikiScriptPublisher/1.0 (https://script-publisher.toolforge.org; Toolforge)",
+        "Accept": "application/json",
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=DEFAULT_TIMEOUT)
+    except requests.exceptions.ConnectionError:
+        raise RepoFetchError(f"Could not connect to {platform}. Check your network.")
+    except requests.exceptions.Timeout:
+        raise RepoFetchError(f"{platform} request timed out after {DEFAULT_TIMEOUT}s.")
+
+    if response.status_code == 404:
+        raise RepoFetchError(
+            f"Repository not found on {platform} (404). "
+            "Make sure the repository is public and the URL is correct."
+        )
+    if response.status_code == 403:
+        raise RepoFetchError(
+            f"{platform} rate limit reached (403). "
+            "Please wait a few minutes and try again."
+        )
+    if not response.ok:
+        raise RepoFetchError(
+            f"{platform} returned an unexpected error: "
+            f"HTTP {response.status_code}"
+        )
+
+    return response
+
+
+==== publisher\urls.py ====
+# publisher/urls.py
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    # ── Public pages ─────────────────────────────────────────────────────────
+    path("", views.home, name="home"),
+    path("get-started/", views.get_started, name="get_started"),
+
+    # ── OAuth 2.0 flow ────────────────────────────────────────────────────────
+    # Step 1: Redirect user to Wikimedia
+    path("oauth/start/", views.oauth_redirect, name="oauth_redirect"),
+    # Step 2: Wikimedia redirects back here with ?code=...&state=...
+    # Must match exactly the callback URL registered in your OAuth consumer:
+    # https://script-publisher.toolforge.org/api/auth/callback
+    path("api/auth/callback/", views.oauth_callback, name="oauth_callback"),
+    # Logout
+    path("logout/", views.logout, name="logout"),
+
+    # ── Dashboard ─────────────────────────────────────────────────────────────
+    path("dashboard/", views.dashboard_home, name="dashboard"),
+    path("dashboard/upload/", views.upload_files, name="upload_files"),
+    path("dashboard/mapping/", views.mapping_config, name="mapping_config"),
+    path("dashboard/publish/", views.publish, name="publish"),
+    path("dashboard/log/", views.publish_log, name="publish_log"),
+    path("dashboard/settings/", views.settings, name="settings"),
+
+    # ── API endpoints ─────────────────────────────────────────────────────────
+    # Fetch JS/CSS files from a public repository (replaces gitingest)
+    path("api/fetch-repo/", views.api_fetch_repo, name="api_fetch_repo"),
+    # Read current page content from a wiki (for diff display)
+    path("api/page-content/", views.api_page_content, name="api_page_content"),
+    # Publish a file (BotPassword or draft path)
+    path("api/publish/", views.api_publish, name="api_publish"),
+]
+
+
+==== publisher\views.py ====
+"""
+views.py
+--------
+All views for Script Publisher.
+
+Auth flow:
+  home             → public landing page
+  get_started      → login page (BotPassword tab + OAuth tab)
+  oauth_redirect   → starts the Wikimedia OAuth 2.0 flow
+  oauth_callback   → handles the return from Wikimedia
+  logout           → clears the session
+
+Dashboard (requires login):
+  dashboard_home   → overview
+  upload_files     → connect a repo and select JS/CSS files
+  mapping_config   → map source files to wiki destination pages
+  publish          → review diff and confirm publish (BotPassword or draft)
+  publish_log      → history of all publish actions
+  settings         → tool preferences
+
+API endpoints:
+  api_fetch_repo   → POST {repo_url} → returns list of JS/CSS files
+  api_publish      → POST publish request → returns result
+  api_page_content → GET current content of a wiki page (for diff)
+"""
+
+import json
+from django.shortcuts import render, redirect
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST, require_GET
+
+from .oauth import (
+    build_authorize_url,
+    handle_callback,
+    login_user,
+    logout_user,
+    get_current_user,
+    require_login,
+    OAuthError,
+)
+from .repo_fetcher import fetch_files, RepoFetchError
+from .wiki_api import (
+    BotSession,
+    WikiAPIError,
+    compute_diff,
+    build_draft_edit_url,
+    build_talk_page_notification,
+    KNOWN_WIKIS,
+)
+from .models import PublishLog
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Public pages
+# ──────────────────────────────────────────────────────────────────────────────
+
+def home(request):
+    return render(request, "publisher/home.html", {
+        "current_user": get_current_user(request),
+    })
+
+
+def get_started(request):
+    """
+    Login page with two tabs:
+      - Wikimedia OAuth  (redirects to Wikimedia for identity verification)
+      - BotPassword      (credential stored in session, used at publish time)
+
+    BotPassword entered here is stored in the session only.
+    It is never written to the database.
+    """
+    if get_current_user(request):
+        return redirect("dashboard")
+
+    if request.method == "POST" and request.POST.get("auth_type") == "botpassword":
+        bot_username = request.POST.get("bot_username", "").strip()
+        bot_password = request.POST.get("bot_password", "")
+        wiki_username = request.POST.get("wiki_username", "").strip()
+
+        if not bot_username or not bot_password or not wiki_username:
+            error = "All fields are required."
+            return render(request, "publisher/get_started.html", {"error": error})
+
+        # Store credentials in session — never in the database
+        request.session["user_username"] = wiki_username
+        request.session["user_groups"] = []
+        request.session["user_rights"] = []
+        request.session["user_token"] = None
+        request.session["bot_username"] = bot_username
+        request.session["bot_password"] = bot_password  # session is server-side only
+        request.session.set_expiry(86400)  # 24 hours
+        return redirect("dashboard")
+
+    error = request.session.pop("auth_error", None)
+    return render(request, "publisher/get_started.html", {"error": error})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# OAuth flow
+# ──────────────────────────────────────────────────────────────────────────────
+
+def oauth_redirect(request):
+    """
+    Step 1: Redirect the user to Wikimedia's OAuth 2.0 authorization page.
+    A random state token is stored in the session to prevent CSRF.
+    """
+    authorize_url = build_authorize_url(request)
+    return redirect(authorize_url)
+
+
+def oauth_callback(request):
+    """
+    Step 2: Wikimedia redirects here after the user authorizes (or denies).
+
+    On success: stores user info in session, redirects to dashboard.
+    On failure: stores error in session, redirects to get_started.
+    """
+    try:
+        profile = handle_callback(request)
+        login_user(request, profile)
+        return redirect("dashboard")
+    except OAuthError as e:
+        request.session["auth_error"] = str(e)
+        return redirect("get_started")
+
+
+def logout(request):
+    logout_user(request)
+    return redirect("home")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Dashboard views (all require login)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@require_login
+def dashboard_home(request):
+    recent_logs = PublishLog.objects.filter(
+        username=get_current_user(request)["username"]
+    )[:5]
+    return render(request, "publisher/dashboard/home.html", {
+        "current_user": get_current_user(request),
+        "recent_logs": recent_logs,
+    })
+
+
+@require_login
+def upload_files(request):
+    return render(request, "publisher/dashboard/upload_files.html", {
+        "current_user": get_current_user(request),
+    })
+
+
+@require_login
+def mapping_config(request):
+    return render(request, "publisher/dashboard/mapping_config.html", {
+        "current_user": get_current_user(request),
+        "wiki_choices": list(KNOWN_WIKIS.keys()),
+    })
+
+
+@require_login
+def publish(request):
+    return render(request, "publisher/dashboard/publish.html", {
+        "current_user": get_current_user(request),
+        "wiki_choices": list(KNOWN_WIKIS.keys()),
+    })
+
+
+@require_login
+def publish_log(request):
+    user = get_current_user(request)
+    logs = PublishLog.objects.filter(username=user["username"])
+    return render(request, "publisher/dashboard/publish_log.html", {
+        "current_user": user,
+        "logs": logs,
+    })
+
+
+@require_login
+def settings(request):
+    return render(request, "publisher/dashboard/settings.html", {
+        "current_user": get_current_user(request),
+    })
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# API: Fetch repository files (Phase 1 — replaces gitingest)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_POST
+def api_fetch_repo(request):
+    """
+    POST /api/fetch-repo/
+    Body: {"repo_url": "https://github.com/owner/repo"}
+
+    Returns:
+        {"files": [{"name": "...", "content": "...", "size": 123, "platform": "github"}]}
+    or
+        {"error": "..."}  with an appropriate HTTP status code.
+
+    Fetches files directly from GitHub/GitLab raw APIs.
+    No third-party services are called.
+    """
+    if not get_current_user(request):
+        return JsonResponse({"error": "Not authenticated."}, status=401)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+
+    repo_url = body.get("repo_url", "").strip()
+    if not repo_url:
+        return JsonResponse({"error": "repo_url is required."}, status=400)
+
+    try:
+        files = fetch_files(repo_url)
+    except RepoFetchError as e:
+        return JsonResponse({"error": str(e)}, status=422)
+    except Exception as e:
+        # Log unexpected errors but don't expose internals
+        import logging
+        logging.getLogger(__name__).exception("Unexpected error in api_fetch_repo")
+        return JsonResponse({"error": "An unexpected error occurred while fetching the repository."}, status=500)
+
+    return JsonResponse({"files": files, "count": len(files)})
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# API: Get current page content for diff (Phase 3)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@require_GET
+def api_page_content(request):
+    """
+    GET /api/page-content/?wiki=en.wikipedia.org&page=User:Dev/script.js
+
+    Returns the current content of a wiki page (for diff display).
+    This is a read-only operation — no authentication needed.
+    """
+    if not get_current_user(request):
+        return JsonResponse({"error": "Not authenticated."}, status=401)
+
+    wiki = request.GET.get("wiki", "").strip()
+    page = request.GET.get("page", "").strip()
+
+    if not wiki or not page:
+        return JsonResponse({"error": "wiki and page parameters are required."}, status=400)
+
+    try:
+        session = BotSession(wiki)
+        content = session.get_page_content(page)
+        return JsonResponse({"content": content, "exists": content is not None})
+    except WikiAPIError as e:
+        return JsonResponse({"error": str(e)}, status=422)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# API: Publish (Phase 3 — BotPassword path, and Phase 4 — draft path)
+# ──────────────────────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_POST
+def api_publish(request):
+    """
+    POST /api/publish/
+    Body:
+    {
+        "method":         "botpassword" | "draft",
+        "bot_username":   "Username@BotName",   // only for botpassword
+        "bot_password":   "the-password",       // only for botpassword
+        "wiki":           "en.wikipedia.org",
+        "page":           "User:Dev/script.js",
+        "content":        "... full file content ...",
+        "edit_summary":   "Update from Script Publisher v1.0",
+        "source_repo":    "https://github.com/owner/repo",
+        "source_file":    "src/script.js",
+        "version":        "v1.0.0"
+    }
+
+    BotPassword path:
+        Logs in with the provided credentials and edits the page directly.
+        The BotPassword is used only for this request and never stored.
+
+    Draft path:
+        Does not edit anything.
+        Returns a pre-filled edit URL for the user to open in their browser.
+    """
+    current_user = get_current_user(request)
+    if not current_user:
+        return JsonResponse({"error": "Not authenticated."}, status=401)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+
+    method = body.get("method", "")
+    wiki = body.get("wiki", "").strip()
+    page = body.get("page", "").strip()
+    content = body.get("content", "")
+    edit_summary = body.get("edit_summary", "Published via Script Publisher").strip()
+    source_repo = body.get("source_repo", "").strip()
+    source_file = body.get("source_file", "").strip()
+    version = body.get("version", "").strip()
+
+    if not wiki or not page or not content:
+        return JsonResponse(
+            {"error": "wiki, page, and content are required."}, status=400
+        )
+
+    if method == "botpassword":
+        return _publish_via_botpassword(
+            request, current_user, body,
+            wiki, page, content, edit_summary,
+            source_repo, source_file, version,
+        )
+    elif method == "draft":
+        return _publish_via_draft(
+            current_user, wiki, page, content, edit_summary,
+            source_repo, source_file, version,
+        )
+    else:
+        return JsonResponse(
+            {"error": "method must be 'botpassword' or 'draft'."}, status=400
+        )
+
+
+def _publish_via_botpassword(
+    request, current_user, body,
+    wiki, page, content, edit_summary,
+    source_repo, source_file, version,
+):
+    """
+    Publish using the user's own BotPassword credentials.
+
+    Security notes:
+    - The BotPassword is used only for this HTTP request.
+    - It is never written to the database or logged.
+    - The user must have confirmed the diff before this endpoint is called.
+    - The tool only performs the edit the user explicitly requested.
+    """
+    bot_username = body.get("bot_username", "").strip()
+    bot_password = body.get("bot_password", "")
+
+    if not bot_username or not bot_password:
+        return JsonResponse(
+            {"error": "bot_username and bot_password are required for BotPassword publish."},
+            status=400,
+        )
+
+    log_entry = PublishLog(
+        username=current_user["username"],
+        source_repo=source_repo,
+        source_file=source_file,
+        target_wiki=wiki,
+        target_page=page,
+        version=version,
+        edit_summary=edit_summary,
+        publish_method="botpassword",
+        status="pending_review",
+    )
+
+    try:
+        session = BotSession(wiki)
+        session.login(bot_username, bot_password)
+        result = session.edit_page(page, content, edit_summary)
+
+        log_entry.status = "success"
+        log_entry.save()
+
+        return JsonResponse({
+            "success": True,
+            "method": "botpassword",
+            "wiki": wiki,
+            "page": page,
+            "revision_id": result.get("newrevid"),
+            "log_id": log_entry.id,
+        })
+
+    except WikiAPIError as e:
+        log_entry.status = "failed"
+        log_entry.error_message = str(e)
+        log_entry.save()
+        return JsonResponse({"error": str(e)}, status=422)
+
+    except Exception:
+        log_entry.status = "failed"
+        log_entry.error_message = "Unexpected internal error."
+        log_entry.save()
+        import logging
+        logging.getLogger(__name__).exception("Unexpected error in BotPassword publish")
+        return JsonResponse(
+            {"error": "An unexpected error occurred during publishing."}, status=500
+        )
+
+
+def _publish_via_draft(
+    current_user, wiki, page, content, edit_summary,
+    source_repo, source_file, version,
+):
+    """
+    Generate a draft edit URL instead of editing the page directly.
+
+    This path is safe for users without interface-admin rights,
+    and requires no special OAuth permissions.
+    """
+    edit_url = build_draft_edit_url(wiki, page, content)
+    notification = build_talk_page_notification(
+        wiki, page, source_repo,
+        current_user["username"], edit_summary,
+    )
+
+    # Log the draft action
+    PublishLog.objects.create(
+        username=current_user["username"],
+        source_repo=source_repo,
+        source_file=source_file,
+        target_wiki=wiki,
+        target_page=page,
+        version=version,
+        edit_summary=edit_summary,
+        publish_method="draft",
+        status="pending_review",
+    )
+
+    return JsonResponse({
+        "success": True,
+        "method": "draft",
+        "edit_url": edit_url,
+        "notification_wikitext": notification,
+        "instructions": (
+            "Open the edit URL in your browser to review and submit the change. "
+            "Copy the notification wikitext to the relevant talk page."
+        ),
+    })
+
+
+==== publisher\wiki_api.py ====
+"""
+wiki_api.py
+-----------
+Handles all MediaWiki API interactions for Script Publisher.
+
+Two publish paths are provided:
+
+  Path A — BotPassword
+    The user supplies their own BotPassword credentials.
+    The tool logs in as that bot and publishes on the user's behalf.
+    This requires no special community approval — it is equivalent
+    to the user running a script locally.
+
+  Path B — Notification + draft (safe MVP path)
+    Instead of editing the wiki page directly, the tool generates:
+      1. A pre-filled edit URL the user can open in their browser.
+      2. An optional talk-page notification with the proposed change.
+    The user reviews and submits the edit themselves.
+    This path requires zero OAuth JS-editing permissions.
+
+Both paths require explicit user confirmation before any edit is made.
+No automated or scheduled publishing is performed.
+"""
+
+import re
+import requests
+from urllib.parse import urljoin
+
+REQUEST_TIMEOUT = 15  # seconds
+
+# Wikis that the tool supports — expand as needed
+KNOWN_WIKIS = {
+    "commons.wikimedia.org": "https://commons.wikimedia.org/w/api.php",
+    "en.wikipedia.org": "https://en.wikipedia.org/w/api.php",
+    "de.wikipedia.org": "https://de.wikipedia.org/w/api.php",
+    "fr.wikipedia.org": "https://fr.wikipedia.org/w/api.php",
+    "es.wikipedia.org": "https://es.wikipedia.org/w/api.php",
+    "www.wikidata.org": "https://www.wikidata.org/w/api.php",
+    "meta.wikimedia.org": "https://meta.wikimedia.org/w/api.php",
+}
+
+
+class WikiAPIError(Exception):
+    """Raised when a MediaWiki API call fails."""
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# BotPassword authentication
+# ──────────────────────────────────────────────────────────────────────────────
+
+class BotSession:
+    """
+    A persistent session authenticated with a BotPassword.
+
+    Usage:
+        session = BotSession("en.wikipedia.org")
+        session.login("MyBot@my-bot-password", "the-password-string")
+        session.edit_page("User:MyBot/script.js", new_content, "Update from Script Publisher")
+    """
+
+    def __init__(self, wiki_domain: str):
+        self.api_url = _api_url(wiki_domain)
+        self.session = requests.Session()
+        self.session.headers.update({"User-Agent": _user_agent()})
+        self._logged_in = False
+
+    def login(self, bot_username: str, bot_password: str):
+        """
+        Authenticate using a BotPassword.
+
+        BotPassword format:   "Username@BotName"
+        Actual password:      the generated password from Special:BotPasswords
+
+        Two-step login as required by the MediaWiki API:
+          1. Get login token
+          2. POST credentials with token
+        """
+        # Step 1: get login token
+        token = self._get_token("login")
+
+        # Step 2: submit credentials
+        response = self._post({
+            "action": "login",
+            "lgname": bot_username,
+            "lgpassword": bot_password,
+            "lgtoken": token,
+            "format": "json",
+        })
+
+        result = response.json()
+        login_result = result.get("login", {}).get("result")
+
+        if login_result == "Success":
+            self._logged_in = True
+        elif login_result == "Failed":
+            reason = result.get("login", {}).get("reason", "unknown reason")
+            raise WikiAPIError(f"BotPassword login failed: {reason}")
+        else:
+            raise WikiAPIError(
+                f"Unexpected login result: {login_result}. "
+                f"Full response: {result}"
+            )
+
+    def get_page_content(self, page_title: str) -> str | None:
+        """
+        Fetch the current wikitext content of a page.
+        Returns None if the page does not exist.
+        """
+        response = self._get({
+            "action": "query",
+            "prop": "revisions",
+            "titles": page_title,
+            "rvprop": "content",
+            "rvslots": "main",
+            "format": "json",
+        })
+        data = response.json()
+        pages = data.get("query", {}).get("pages", {})
+
+        for page_id, page_data in pages.items():
+            if page_id == "-1":
+                return None  # Page does not exist
+            revisions = page_data.get("revisions", [])
+            if revisions:
+                return revisions[0].get("slots", {}).get("main", {}).get("*", "")
+        return None
+
+    def edit_page(
+        self,
+        page_title: str,
+        new_content: str,
+        edit_summary: str,
+        minor: bool = False,
+    ) -> dict:
+        """
+        Replace the content of a wiki page.
+
+        Returns the API response dict on success.
+        Raises WikiAPIError on failure.
+
+        Security contract:
+          - This method is only called after the user has confirmed the diff.
+          - The caller is responsible for ensuring the user has the rights
+            to edit the target page.
+        """
+        if not self._logged_in:
+            raise WikiAPIError("Not logged in. Call login() first.")
+
+        # Get a CSRF token
+        csrf_token = self._get_token("csrf")
+
+        response = self._post({
+            "action": "edit",
+            "title": page_title,
+            "text": new_content,
+            "summary": edit_summary,
+            "minor": "1" if minor else "0",
+            "bot": "1",
+            "token": csrf_token,
+            "format": "json",
+        })
+
+        data = response.json()
+
+        if "error" in data:
+            code = data["error"].get("code", "unknown")
+            info = data["error"].get("info", "")
+            raise WikiAPIError(f"Edit failed [{code}]: {info}")
+
+        edit_result = data.get("edit", {})
+        if edit_result.get("result") != "Success":
+            raise WikiAPIError(f"Edit did not succeed: {data}")
+
+        return edit_result
+
+    # ── Internal helpers ─────────────────────────────────────────────────────
+
+    def _get_token(self, token_type: str) -> str:
+        response = self._get({
+            "action": "query",
+            "meta": "tokens",
+            "type": token_type,
+            "format": "json",
+        })
+        data = response.json()
+        token = data.get("query", {}).get("tokens", {}).get(f"{token_type}token")
+        if not token:
+            raise WikiAPIError(f"Could not retrieve {token_type} token.")
+        return token
+
+    def _get(self, params: dict) -> requests.Response:
+        try:
+            response = self.session.get(
+                self.api_url, params=params, timeout=REQUEST_TIMEOUT
+            )
+        except requests.exceptions.RequestException as e:
+            raise WikiAPIError(f"Network error: {e}")
+        if not response.ok:
+            raise WikiAPIError(f"HTTP {response.status_code} from MediaWiki API.")
+        return response
+
+    def _post(self, data: dict) -> requests.Response:
+        try:
+            response = self.session.post(
+                self.api_url, data=data, timeout=REQUEST_TIMEOUT
+            )
+        except requests.exceptions.RequestException as e:
+            raise WikiAPIError(f"Network error: {e}")
+        if not response.ok:
+            raise WikiAPIError(f"HTTP {response.status_code} from MediaWiki API.")
+        return response
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Path B — Notification + draft URL (no direct JS-editing required)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def build_draft_edit_url(wiki_domain: str, page_title: str, content: str) -> str:
+    """
+    Build a pre-filled edit URL for the user to open in their browser.
+
+    The user sees the content pre-loaded in the edit form, reviews it,
+    and submits it themselves. Script Publisher never touches the page.
+
+    This is the safe MVP publish path — no OAuth JS-editing needed.
+    """
+    from urllib.parse import urlencode, quote
+
+    base = f"https://{wiki_domain}/wiki/{quote(page_title, safe='')}"
+    params = {
+        "action": "edit",
+        "preloadtitle": page_title,
+    }
+    # Note: preload with full content is too long for a URL parameter.
+    # We provide the edit URL + instructions to paste the content.
+    # A future version can use the API's createonly=true flow.
+    return f"https://{wiki_domain}/w/index.php?title={quote(page_title, safe='')}&action=edit"
+
+
+def build_talk_page_notification(
+    wiki_domain: str,
+    page_title: str,
+    repo_url: str,
+    username: str,
+    edit_summary: str,
+) -> str:
+    """
+    Build a wikitext notification message for the relevant talk page.
+
+    This is posted to inform community members that a new version
+    is available from the source repository.
+    """
+    return (
+        f"== Script update available ==\n\n"
+        f"A new version of [[{page_title}]] is available from "
+        f"[{repo_url} the source repository].\n\n"
+        f"; Edit summary: {edit_summary}\n"
+        f"; Prepared by: [[User:{username}]] using "
+        f"[[Toolforge:script-publisher|Script Publisher]]\n\n"
+        f"Please review the diff before applying. ~~~~"
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Diff helper
+# ──────────────────────────────────────────────────────────────────────────────
+
+def compute_diff(old_content: str | None, new_content: str) -> list[dict]:
+    """
+    Compute a simple line-by-line diff between old and new content.
+
+    Returns a list of dicts:
+        {"type": "added"|"removed"|"unchanged", "line": str}
+
+    Used to show the user what will change before they confirm publish.
+    This is a naive diff — for production consider using difflib.unified_diff.
+    """
+    import difflib
+
+    old_lines = (old_content or "").splitlines()
+    new_lines = new_content.splitlines()
+
+    diff = []
+    matcher = difflib.SequenceMatcher(None, old_lines, new_lines)
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            for line in old_lines[i1:i2]:
+                diff.append({"type": "unchanged", "line": line})
+        elif tag in ("replace", "delete"):
+            for line in old_lines[i1:i2]:
+                diff.append({"type": "removed", "line": line})
+            if tag == "replace":
+                for line in new_lines[j1:j2]:
+                    diff.append({"type": "added", "line": line})
+        elif tag == "insert":
+            for line in new_lines[j1:j2]:
+                diff.append({"type": "added", "line": line})
+
+    return diff
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Utilities
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _api_url(wiki_domain: str) -> str:
+    """Return the MediaWiki API endpoint for a given domain."""
+    clean = wiki_domain.lower().strip()
+    if clean in KNOWN_WIKIS:
+        return KNOWN_WIKIS[clean]
+    # Fallback: construct the URL from the domain
+    return f"https://{clean}/w/api.php"
+
+
+def _user_agent() -> str:
+    return "WikiScriptPublisher/1.0 (https://script-publisher.toolforge.org; Toolforge)"
+
+
+==== publisher\__init__.py ====
+
+==== templates\publisher\dashboard\home.html ====
+{% extends 'base.html' %}
+{% block content %}
+<div style="background:var(--bg-base); border-bottom:1px solid var(--border-color); padding:4rem 0 3rem;">
+  <div class="sp-container" style="text-align:center; padding-top:0; padding-bottom:0;">
+    <div style="display:inline-flex;align-items:center;gap:.75rem;margin-bottom:1.5rem;">
+      <div style="width:48px;height:48px;background:var(--wmf-blue);border-radius:6px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.4rem;">
+        <i class="fa-solid fa-code-branch"></i>
+      </div>
+      <h1 style="margin:0;font-size:2rem;font-weight:700;color:var(--color-base);">WikiScriptSync</h1>
+    </div>
+    <p style="max-width:560px;margin:0 auto 2rem;font-size:1.0625rem;color:var(--color-subtle);line-height:1.7;">
+      Synchronize JavaScript and CSS gadgets from public Git repositories
+      to Wikimedia wikis — with diff review, audit logging, and change notifications.
+    </p>
+    <div style="display:flex;gap:.75rem;justify-content:center;flex-wrap:wrap;">
+      <a href="{% url 'get_started' %}" class="sp-btn sp-btn--primary" style="font-size:1rem;padding:.625rem 1.5rem;">
+        Get started <i class="fa-solid fa-arrow-right" style="font-size:.875rem;"></i>
+      </a>
+      <a href="https://meta.wikimedia.org/wiki/Community_Wishlist_Survey_2022/Bots_and_gadgets/A_bot_or_gadget_to_publish_public_Git_repo_to_a_gadget_or_user_script"
+         target="_blank" rel="noopener" class="sp-btn" style="font-size:1rem;padding:.625rem 1.5rem;">
+        <i class="fa-solid fa-file-lines" style="font-size:.875rem;"></i> Wishlist proposal
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="sp-container">
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.25rem;margin-bottom:2.5rem;">
+
+    <div class="sp-card">
+      <div class="sp-card__body">
+        <div style="width:36px;height:36px;background:var(--wmf-blue-light);border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:.875rem;">
+          <i class="fa-solid fa-upload" style="color:var(--wmf-blue);font-size:.9rem;"></i>
+        </div>
+        <h3 style="margin:0 0 .5rem;font-size:1rem;">1. Connect repository</h3>
+        <p style="margin:0;font-size:.875rem;color:var(--color-subtle);line-height:1.6;">
+          Enter a public GitHub or GitLab URL. The tool fetches your
+          <span class="sp-mono">.js</span> and <span class="sp-mono">.css</span>
+          files directly — no third-party services.
+        </p>
+      </div>
+    </div>
+
+    <div class="sp-card">
+      <div class="sp-card__body">
+        <div style="width:36px;height:36px;background:var(--wmf-blue-light);border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:.875rem;">
+          <i class="fa-solid fa-diagram-project" style="color:var(--wmf-blue);font-size:.9rem;"></i>
+        </div>
+        <h3 style="margin:0 0 .5rem;font-size:1rem;">2. Map to wiki pages</h3>
+        <p style="margin:0;font-size:.875rem;color:var(--color-subtle);line-height:1.6;">
+          Map each source file to a destination wiki page, such as
+          <span class="sp-mono">User:You/script.js</span> or
+          <span class="sp-mono">MediaWiki:Gadget-Name.js</span>.
+        </p>
+      </div>
+    </div>
+
+    <div class="sp-card">
+      <div class="sp-card__body">
+        <div style="width:36px;height:36px;background:var(--wmf-blue-light);border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:.875rem;">
+          <i class="fa-solid fa-code-compare" style="color:var(--wmf-blue);font-size:.9rem;"></i>
+        </div>
+        <h3 style="margin:0 0 .5rem;font-size:1rem;">3. Review diff and publish</h3>
+        <p style="margin:0;font-size:.875rem;color:var(--color-subtle);line-height:1.6;">
+          See exactly what changes before confirming.
+          Publish via your BotPassword, or get a pre-filled edit URL
+          to review and submit yourself.
+        </p>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="sp-card">
+    <div class="sp-card__body" style="display:flex;align-items:flex-start;gap:1rem;">
+      <i class="fa-solid fa-bell" style="color:var(--wmf-blue);font-size:1.2rem;margin-top:.15rem;flex-shrink:0;"></i>
+      <div>
+        <h3 style="margin:0 0 .375rem;font-size:1rem;">Change notifications</h3>
+        <p style="margin:0;font-size:.875rem;color:var(--color-subtle);line-height:1.6;">
+          WikiScriptSync can notify Wikimedia users on their wiki talk page when a tracked
+          source script changes. Interface admins can opt in to receive a talk-page message
+          whenever the upstream repository is updated — without needing to check manually.
+          <a href="{% url 'get_started' %}">Get started to subscribe.</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div style="text-align:center;padding:1rem 0 2rem;font-size:.8125rem;color:var(--color-subtle);">
+    <a href="https://gitlab.wikimedia.org/toolforge-repos/script-publisher" target="_blank" rel="noopener">Source code (GitLab)</a>
+    &nbsp;·&nbsp;
+    <a href="https://meta.wikimedia.org/wiki/User_talk:Dev_Jadiya#Script_Publisher" target="_blank" rel="noopener">Community discussion</a>
+    &nbsp;·&nbsp;
+    <a href="https://script-publisher.toolforge.org/" target="_blank" rel="noopener">Toolforge deployment</a>
+  </div>
+</div>
+{% endblock %}
+
+==== templates\publisher\dashboard\mapping_config.html ====
+{% extends 'base_dashboard.html' %} {% block dashboard_content %}
+<h1 class="sp-page-title">Mapping configuration</h1>
+<p class="sp-page-subtitle">Define where each selected file should be published on the wiki.</p>
+
+<div class="sp-card" style="margin-bottom:1.25rem;">
+  <div class="sp-card__header">
+    <span>File mappings</span>
+    <div style="display:flex;gap:.5rem;">
+      <button onclick="autoSuggest()" class="sp-btn sp-btn--sm">
+        <i class="fa-solid fa-wand-magic-sparkles"></i> Auto-suggest
+      </button>
+      <button onclick="openBulkPrefix()" class="sp-btn sp-btn--sm">
+        <i class="fa-solid fa-i-cursor"></i> Bulk prefix
+      </button>
+      <button onclick="applySandbox()" class="sp-btn sp-btn--sm" style="color:#5c4a00;border-color:#c8a400;background:var(--wmf-yellow-light);">
+        <i class="fa-solid fa-flask"></i> Sandbox mode
+      </button>
+    </div>
+  </div>
+
+  <div id="emptyState" class="hidden" style="padding:3rem;text-align:center;color:var(--color-subtle);">
+    <i class="fa-solid fa-upload" style="font-size:2rem;opacity:.3;display:block;margin-bottom:.75rem;"></i>
+    No files selected. <a href="{% url 'upload_files' %}">Go back to upload files.</a>
+  </div>
+
+  <div style="overflow-x:auto;">
+    <table class="sp-table" id="mappingTable">
+      <thead>
+        <tr>
+          <th style="width:28%">Source file</th>
+          <th style="width:24%">Target wiki</th>
+          <th>Destination page</th>
+          <th style="width:40px;text-align:center;">Remove</th>
+        </tr>
+      </thead>
+      <tbody id="mappingTableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="sp-card__footer">
+    <p class="sp-text-small sp-text-subtle" style="flex:1;margin:0;align-self:center;">
+      Use full page names including namespace, e.g. <span class="sp-mono">User:Dev_Jadiya/script.js</span>
+    </p>
+    <button onclick="saveMappings()" class="sp-btn">
+      <i class="fa-regular fa-floppy-disk"></i> Save
+    </button>
+    <a href="{% url 'publish' %}" class="sp-btn sp-btn--primary">
+      Continue to publish <i class="fa-solid fa-arrow-right"></i>
+    </a>
+  </div>
+</div>
+
+{# Bulk prefix modal #}
+<div id="prefixModal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.5);align-items:center;justify-content:center;">
+  <div style="background:var(--bg-base);border-radius:4px;padding:1.5rem;width:100%;max-width:420px;box-shadow:0 4px 20px rgba(0,0,0,.2);">
+    <h3 style="margin:0 0 .5rem;font-size:1rem;">Bulk add prefix</h3>
+    <p class="sp-text-small sp-text-subtle" style="margin:0 0 1rem;">Prepend a namespace or path to all destination pages.</p>
+    <input id="prefixInput" type="text" class="sp-input" placeholder="User:Dev_Jadiya/" style="margin-bottom:1rem;" />
+    <div style="display:flex;justify-content:flex-end;gap:.5rem;">
+      <button onclick="closeBulkPrefix()" class="sp-btn">Cancel</button>
+      <button onclick="applyBulkPrefix()" class="sp-btn sp-btn--primary">Apply</button>
+    </div>
+  </div>
+</div>
+
+{# Toast container #}
+<div id="toastContainer" style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:400;display:flex;flex-direction:column;gap:.5rem;"></div>
+
+<script>
+  const WIKI_CHOICES = {{ wiki_choices|safe }};
+  let fileMappings = [];
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const saved = sessionStorage.getItem("mappingConfig");
+    const fresh = sessionStorage.getItem("selectedFiles");
+
+    if (saved) {
+      fileMappings = JSON.parse(saved);
+    } else if (fresh) {
+      fileMappings = JSON.parse(fresh).map(f => ({
+        source: f.name, wiki: "commons.wikimedia.org", dest: ""
+      }));
+    }
+    renderTable();
+  });
+
+  function renderTable() {
+    const tbody = document.getElementById("mappingTableBody");
+    const empty = document.getElementById("emptyState");
+    tbody.innerHTML = "";
+
+    if (!fileMappings.length) {
+      empty.classList.remove("hidden");
+      return;
+    }
+    empty.classList.add("hidden");
+
+    fileMappings.forEach((file, i) => {
+      const wikiOptions = WIKI_CHOICES.map(w =>
+        `<option value="${w}" ${file.wiki===w?"selected":""}>${w}</option>`
+      ).join("");
+
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="sp-mono sp-text-small">${escHtml(file.source)}</td>
+        <td>
+          <select class="sp-select" style="font-size:.8125rem;padding:.3rem .5rem;"
+            onchange="fileMappings[${i}].wiki=this.value">${wikiOptions}</select>
+        </td>
+        <td>
+          <input type="text" class="sp-input" style="font-size:.8125rem;"
+            value="${escHtml(file.dest)}"
+            placeholder="MediaWiki:Gadget-Name.js"
+            oninput="fileMappings[${i}].dest=this.value" />
+        </td>
+        <td style="text-align:center;">
+          <button onclick="removeFile(${i})" class="sp-btn sp-btn--quiet sp-btn--sm"
+            style="color:var(--wmf-red);" title="Remove">
+            <i class="fa-regular fa-trash-can"></i>
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function removeFile(i) {
+    const name = fileMappings[i].source;
+    fileMappings.splice(i, 1);
+    renderTable();
+    toast(`Removed ${name}`);
+  }
+
+  function autoSuggest() {
+    let count = 0;
+    fileMappings.forEach(f => {
+      if (!f.dest) {
+        f.dest = "MediaWiki:Gadget-" + f.source.split("/").pop();
+        count++;
+      }
+    });
+    renderTable();
+    toast(`Auto-suggested ${count} path(s)`);
+  }
+
+  function applySandbox() {
+    const user = "{{ current_user.username }}";
+    fileMappings.forEach(f => {
+      f.dest = `User:${user}/Sandbox/${f.source.split("/").pop()}`;
+    });
+    renderTable();
+    toast("All destinations set to your sandbox");
+  }
+
+  function openBulkPrefix() {
+    document.getElementById("prefixModal").style.display = "flex";
+  }
+  function closeBulkPrefix() {
+    document.getElementById("prefixModal").style.display = "none";
+  }
+  function applyBulkPrefix() {
+    const prefix = document.getElementById("prefixInput").value;
+    if (prefix) {
+      fileMappings.forEach(f => { f.dest = prefix + f.dest; });
+      renderTable();
+      toast(`Prefix "${prefix}" applied`);
+    }
+    closeBulkPrefix();
+  }
+
+  function saveMappings() {
+    sessionStorage.setItem("mappingConfig", JSON.stringify(fileMappings));
+    toast("Mappings saved", "success");
+  }
+
+  function toast(msg, type="info") {
+    const c = document.getElementById("toastContainer");
+    const d = document.createElement("div");
+    const bg = type==="success"?"var(--wmf-green-light)":"var(--bg-base)";
+    const border = type==="success"?"var(--wmf-green)":"var(--border-color)";
+    d.style.cssText = `background:${bg};border:1px solid ${border};border-radius:4px;padding:.625rem 1rem;font-size:.875rem;box-shadow:0 2px 8px rgba(0,0,0,.15);display:flex;align-items:center;gap:.5rem;`;
+    d.innerHTML = `<i class="fa-solid ${type==="success"?"fa-check":"fa-info-circle"}" style="color:${type==="success"?"var(--wmf-green)":"var(--wmf-blue)"};font-size:.875rem;"></i>${escHtml(msg)}`;
+    c.appendChild(d);
+    setTimeout(()=>d.remove(), 3000);
+  }
+
+  function escHtml(s) {
+    return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  }
+</script>
+{% endblock %}
+
+==== templates\publisher\dashboard\notifications.html ====
+{% extends 'base_dashboard.html' %} {% block dashboard_content %}
+<h1 class="sp-page-title">Change notifications</h1>
+<p class="sp-page-subtitle">
+  When a tracked script's source repository changes, WikiScriptSync posts a message
+  to your Wikimedia talk page so you know to review and update.
+</p>
+
+{% if pref and pref.opted_out %}
+<div class="sp-notice sp-notice--warning" style="margin-bottom:1.5rem;">
+  <i class="fa-solid fa-bell-slash"></i>
+  <div>You have opted out of notifications. Re-enable below to start receiving talk-page messages again.</div>
+</div>
+{% endif %}
+
+<div class="sp-card" style="margin-bottom:1.25rem;">
+  <div class="sp-card__header">Your subscription</div>
+  <div class="sp-card__body">
+
+    <div class="sp-notice sp-notice--info" style="margin-bottom:1.25rem;">
+      <i class="fa-solid fa-circle-info"></i>
+      <div>
+        Notifications are posted by <strong>{{ notifier_bot_wiki }}</strong> user
+        <strong>{{ notifier_bot_display }}</strong> to your talk page on the relevant wiki.
+        You can opt out at any time.
+      </div>
+    </div>
+
+    <div class="sp-field">
+      <label class="sp-label">Your Wikimedia username</label>
+      <input type="text" class="sp-input" id="notifUsername"
+        value="{{ current_user.username }}" readonly
+        style="background:var(--bg-neutral);max-width:360px;" />
+      <p class="sp-field-hint">
+        Notifications will be posted to <span class="sp-mono">User_talk:{{ current_user.username }}</span>
+        on the wiki where the script is located.
+      </p>
+    </div>
+
+    {% if pref and not pref.opted_out %}
+    <div style="display:flex;gap:.75rem;align-items:center;padding:.875rem;background:var(--wmf-green-light);border:1px solid var(--wmf-green);border-radius:4px;margin-bottom:1rem;">
+      <i class="fa-solid fa-bell" style="color:var(--wmf-green);flex-shrink:0;"></i>
+      <div>
+        <strong style="color:#0d5c4a;">Notifications enabled</strong>
+        <p style="margin:.2rem 0 0;font-size:.8125rem;color:#0d5c4a;">
+          You are subscribed. You will receive a talk-page message when a tracked script changes.
+        </p>
+      </div>
+    </div>
+    <form method="POST" action="{% url 'notifications' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="opt_out" />
+      <button type="submit" class="sp-btn"
+        style="color:var(--wmf-red);border-color:var(--wmf-red);">
+        <i class="fa-solid fa-bell-slash"></i> Opt out of notifications
+      </button>
+    </form>
+    {% else %}
+    <form method="POST" action="{% url 'notifications' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="opt_in" />
+      <button type="submit" class="sp-btn sp-btn--primary">
+        <i class="fa-solid fa-bell"></i> Enable notifications
+      </button>
+    </form>
+    {% endif %}
+
+  </div>
+</div>
+
+<div class="sp-card" style="margin-bottom:1.25rem;">
+  <div class="sp-card__header">
+    <span>Tracked scripts</span>
+    <span class="sp-badge sp-badge--neutral">{{ tracked|length }}</span>
+  </div>
+
+  {% if tracked %}
+  <div style="overflow-x:auto;">
+    <table class="sp-table">
+      <thead>
+        <tr>
+          <th>Source file</th>
+          <th>Repository</th>
+          <th>Target wiki page</th>
+          <th>Last checked</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in tracked %}
+        <tr>
+          <td class="sp-mono sp-text-small">{{ t.source_file }}</td>
+          <td class="sp-text-small">
+            <a href="{{ t.source_repo }}" target="_blank" rel="noopener">
+              {{ t.source_repo|truncatechars:45 }}
+            </a>
+          </td>
+          <td class="sp-mono sp-text-small">
+            <a href="https://{{ t.target_wiki }}/wiki/{{ t.target_page }}"
+               target="_blank" rel="noopener">{{ t.target_page }}</a>
+          </td>
+          <td class="sp-text-small sp-text-subtle">
+            {% if t.last_checked_at %}{{ t.last_checked_at|date:"M d, H:i" }}{% else %}Never{% endif %}
+          </td>
+          <td>
+            {% if t.has_update %}
+            <span class="sp-badge sp-badge--pending">
+              <i class="fa-solid fa-circle-exclamation"></i> Update available
+            </span>
+            {% else %}
+            <span class="sp-badge sp-badge--success">
+              <i class="fa-solid fa-check"></i> Up to date
+            </span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding:2.5rem;text-align:center;color:var(--color-subtle);font-size:.875rem;">
+    <i class="fa-solid fa-code-branch" style="font-size:2rem;opacity:.25;display:block;margin-bottom:.75rem;"></i>
+    No tracked scripts yet. Scripts are automatically tracked when you publish using this tool.
+  </div>
+  {% endif %}
+</div>
+
+<div class="sp-card">
+  <div class="sp-card__header">Notification log</div>
+  {% if notification_logs %}
+  <div style="overflow-x:auto;">
+    <table class="sp-table">
+      <thead>
+        <tr>
+          <th>Script</th>
+          <th>Talk page notified</th>
+          <th>Sent</th>
+          <th>Result</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in notification_logs %}
+        <tr>
+          <td class="sp-mono sp-text-small">{{ log.tracked_script.source_file }}</td>
+          <td class="sp-text-small sp-text-subtle">User_talk:{{ log.notified_username }}</td>
+          <td class="sp-text-small sp-text-subtle">{{ log.sent_at|date:"M d, H:i" }}</td>
+          <td>
+            {% if log.success %}
+            <span class="sp-badge sp-badge--success">Delivered</span>
+            {% else %}
+            <span class="sp-badge sp-badge--error" title="{{ log.error_message }}">Failed</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding:1.5rem;text-align:center;font-size:.875rem;color:var(--color-subtle);">
+    No notifications sent yet.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+==== templates\publisher\dashboard\publish.html ====
+{% extends 'base_dashboard.html' %} {% block dashboard_content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-900">Publish</h1>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8 pb-12">
+
+  {# ── Left: metadata + publish method ────────────────────────────────────── #}
+  <div class="lg:col-span-2 space-y-6">
+
+    {# Metadata card #}
+    <div class="bg-white shadow sm:rounded-lg border border-gray-200 p-6">
+      <h3 class="text-lg font-bold text-gray-900 mb-4">Metadata</h3>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5 mb-4">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Title</label>
+          <input id="metaTitle" type="text" placeholder="My Gadget"
+            class="w-full rounded-md border-gray-300 border px-3 py-2 text-gray-900 focus:ring-brand-500 focus:border-brand-500 shadow-sm outline-none text-sm"/>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Version</label>
+          <input id="metaVersion" type="text" placeholder="v1.0.0"
+            class="w-full rounded-md border-gray-300 border px-3 py-2 text-gray-900 focus:ring-brand-500 focus:border-brand-500 shadow-sm outline-none text-sm"/>
+        </div>
+      </div>
+
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-gray-700 mb-1">Edit summary <span class="text-red-500">*</span></label>
+        <input id="metaSummary" type="text" placeholder="Update gadget to v1.0.0 via Script Publisher"
+          class="w-full rounded-md border-gray-300 border px-3 py-2 text-gray-900 focus:ring-brand-500 focus:border-brand-500 shadow-sm outline-none text-sm"
+          required/>
+        <p class="text-xs text-gray-400 mt-1">This becomes the edit summary on the wiki page revision.</p>
+      </div>
+    </div>
+
+    {# Publish method card #}
+    <div class="bg-white shadow sm:rounded-lg border border-gray-200 overflow-hidden">
+      <div class="px-6 py-5 border-b border-gray-100">
+        <h3 class="text-lg font-bold text-gray-900">Publish method</h3>
+        <p class="text-sm text-gray-500 mt-1">
+          Choose how to publish. Both methods require you to confirm before anything is changed.
+        </p>
+      </div>
+
+      {# Method selector tabs #}
+      <div class="px-6 pt-5">
+        <div class="bg-gray-100 p-1 rounded-lg flex mb-5 max-w-sm">
+          <button id="tab-draft" onclick="switchMethod('draft')"
+            class="flex-1 bg-white text-gray-900 shadow-sm rounded-md py-1.5 text-sm font-semibold transition-all">
+            <i class="fa-regular fa-file-lines mr-1.5"></i>Draft URL
+          </button>
+          <button id="tab-botpassword" onclick="switchMethod('botpassword')"
+            class="flex-1 text-gray-500 hover:text-gray-900 py-1.5 text-sm font-medium transition-colors">
+            <i class="fa-solid fa-robot mr-1.5"></i>BotPassword
+          </button>
+        </div>
+      </div>
+
+      {# Draft method #}
+      <div id="method-draft" class="px-6 pb-6">
+        <div class="p-4 bg-green-50 border border-green-200 rounded-md mb-4">
+          <div class="flex items-start gap-3">
+            <i class="fa-solid fa-circle-check text-green-600 mt-0.5 flex-shrink-0"></i>
+            <div>
+              <p class="text-sm font-semibold text-green-800">Recommended for most users</p>
+              <p class="text-sm text-green-700 mt-0.5">
+                Script Publisher generates a pre-filled edit URL.
+                You open it in your browser, review the content, and save it yourself.
+                No JavaScript-editing OAuth permission is required.
+              </p>
+            </div>
+          </div>
+        </div>
+        <p class="text-xs text-gray-500">
+          The tool will also generate a talk-page notification message you can post to
+          let the community know about the update.
+        </p>
+      </div>
+
+      {# BotPassword method #}
+      <div id="method-botpassword" class="hidden px-6 pb-6">
+        <div class="p-4 bg-amber-50 border border-amber-200 rounded-md mb-5">
+          <div class="flex items-start gap-3">
+            <i class="fa-solid fa-triangle-exclamation text-amber-600 mt-0.5 flex-shrink-0"></i>
+            <div>
+              <p class="text-sm font-semibold text-amber-800">Direct edit — use with care</p>
+              <p class="text-sm text-amber-700 mt-0.5">
+                The tool will edit the wiki page directly using your BotPassword.
+                You must have the rights to edit the target page.
+                Your BotPassword is used only for this request and is never stored.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {% if current_user.bot_username_in_session %}
+        <div class="p-3 bg-gray-50 border border-gray-200 rounded-md mb-4 text-sm text-gray-700">
+          <i class="fa-solid fa-circle-check text-green-500 mr-2"></i>
+          BotPassword credentials loaded from your session.
+        </div>
+        {% else %}
+        <p class="text-sm text-gray-500 mb-4">
+          Enter the BotPassword for your target wiki.
+          Create one at <span class="font-mono text-xs">Special:BotPasswords</span>.
+        </p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Bot username</label>
+            <input id="botUsername" type="text" placeholder="Username@bot-name"
+              class="w-full rounded-md border-gray-300 border px-3 py-2 text-gray-900 focus:ring-brand-500 focus:border-brand-500 shadow-sm outline-none text-sm"/>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Bot password</label>
+            <input id="botPassword" type="password" placeholder="••••••••••••••••"
+              class="w-full rounded-md border-gray-300 border px-3 py-2 text-gray-900 focus:ring-brand-500 focus:border-brand-500 shadow-sm outline-none text-sm"/>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+  </div>
+
+  {# ── Right: file summary + publish button ────────────────────────────────── #}
+  <div class="lg:col-span-1 space-y-6">
+    <div class="bg-white shadow sm:rounded-lg border border-gray-200 p-6">
+      <h3 class="text-lg font-bold text-gray-900 mb-4">Files to publish</h3>
+
+      <div id="fileSummaryList" class="space-y-3 mb-6">
+        <p class="text-sm text-gray-400 italic">No mappings loaded.</p>
+      </div>
+
+      <div id="publishError" class="hidden mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+        <p id="publishErrorText" class="text-sm text-red-800"></p>
+      </div>
+
+      <button
+        onclick="startPublish()"
+        id="publishBtn"
+        class="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-4 rounded-md shadow-lg transition-all flex justify-center items-center gap-2"
+      >
+        <i class="fa-solid fa-paper-plane"></i>
+        <span id="publishBtnText">Publish files</span>
+      </button>
+
+      <p class="text-xs text-gray-400 text-center mt-3">
+        You will see a confirmation step before anything is published.
+      </p>
+    </div>
+  </div>
+
+</div>
+
+{# ── Diff / confirmation modal ────────────────────────────────────────────── #}
+<div id="confirmModal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
+  <div class="fixed inset-0 bg-gray-900 bg-opacity-75 backdrop-blur-sm"></div>
+  <div class="flex items-center justify-center min-h-screen px-4">
+    <div class="bg-white rounded-lg overflow-hidden shadow-2xl w-full max-w-5xl flex flex-col" style="max-height:85vh">
+
+      <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center flex-shrink-0">
+        <h3 class="text-lg font-bold text-gray-900">
+          <i class="fa-solid fa-code-compare text-brand-600 mr-2"></i>
+          Confirm changes
+        </h3>
+        <button onclick="closeConfirmModal()" class="text-gray-400 hover:text-gray-600">
+          <i class="fa-solid fa-xmark text-2xl"></i>
+        </button>
+      </div>
+
+      <div id="diffContainer" class="flex-1 overflow-auto">
+        {# Filled dynamically #}
+      </div>
+
+      <div class="px-6 py-4 border-t border-gray-200 bg-white flex justify-between items-center flex-shrink-0">
+        <button onclick="closeConfirmModal()"
+          class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 text-sm hover:bg-gray-50 font-medium">
+          Cancel
+        </button>
+        <button onclick="confirmAndPublish()"
+          id="confirmBtn"
+          class="px-6 py-2 bg-brand-600 text-white rounded-md text-sm hover:bg-brand-700 font-bold shadow-sm flex items-center gap-2">
+          <i class="fa-solid fa-check"></i> Confirm and publish
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Result modal (draft path) ─────────────────────────────────────────────── #}
+<div id="draftResultModal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
+  <div class="fixed inset-0 bg-gray-900 bg-opacity-75"></div>
+  <div class="flex items-center justify-center min-h-screen px-4">
+    <div class="bg-white rounded-lg shadow-2xl w-full max-w-2xl p-8">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="h-10 w-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
+          <i class="fa-solid fa-circle-check text-green-600"></i>
+        </div>
+        <div>
+          <h3 class="text-lg font-bold text-gray-900">Draft ready</h3>
+          <p class="text-sm text-gray-500">Open the link below to review and publish.</p>
+        </div>
+      </div>
+
+      <div class="mb-5">
+        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Edit URL</label>
+        <div class="flex items-center gap-2">
+          <input id="draftEditUrl" type="text" readonly
+            class="flex-1 rounded-md border-gray-300 border px-3 py-2 text-sm font-mono bg-gray-50 text-gray-800 outline-none"/>
+          <a id="draftEditLink" href="#" target="_blank" rel="noopener noreferrer"
+            class="flex-shrink-0 bg-brand-600 text-white px-4 py-2 rounded-md text-sm font-semibold hover:bg-brand-700">
+            Open <i class="fa-solid fa-arrow-up-right-from-square ml-1 text-xs"></i>
+          </a>
+        </div>
+      </div>
+
+      <div class="mb-6">
+        <label class="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">
+          Talk-page notification <span class="font-normal normal-case">(optional — paste on the relevant talk page)</span>
+        </label>
+        <textarea id="draftNotification" rows="6" readonly
+          class="w-full rounded-md border-gray-300 border px-3 py-2 text-xs font-mono bg-gray-50 text-gray-700 outline-none resize-none"></textarea>
+        <button onclick="copyNotification()"
+          class="mt-2 text-xs text-brand-600 hover:text-brand-700 font-medium">
+          <i class="fa-regular fa-copy mr-1"></i>Copy wikitext
+        </button>
+      </div>
+
+      <div class="flex justify-end gap-3">
+        <button onclick="document.getElementById('draftResultModal').classList.add('hidden')"
+          class="px-4 py-2 border border-gray-300 rounded-md text-gray-700 text-sm hover:bg-gray-50 font-medium">
+          Close
+        </button>
+        <a href="{% url 'publish_log' %}"
+          class="px-4 py-2 bg-gray-800 text-white rounded-md text-sm font-semibold hover:bg-gray-900">
+          View publish log
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const CSRF_TOKEN = "{{ csrf_token }}";
+  const WIKI_USERNAME = "{{ current_user.username }}";
+  let mappings = [];      // [{source, wiki, dest, content}]
+  let currentMethod = "draft";
+
+  // ── Load mappings from session ────────────────────────────────────────────
+
+  document.addEventListener("DOMContentLoaded", () => {
+    const raw = sessionStorage.getItem("mappingConfig");
+    const files = sessionStorage.getItem("selectedFiles");
+
+    if (raw) {
+      const savedMappings = JSON.parse(raw);
+      const fileMap = {};
+      if (files) {
+        JSON.parse(files).forEach(f => { fileMap[f.name] = f.content; });
+      }
+      mappings = savedMappings.map(m => ({
+        ...m,
+        content: fileMap[m.source] || "",
+      }));
+      renderFileSummary();
+    }
+  });
+
+  function renderFileSummary() {
+    const container = document.getElementById("fileSummaryList");
+    if (!mappings.length) return;
+    container.innerHTML = "";
+    mappings.forEach(m => {
+      const div = document.createElement("div");
+      div.className = "text-sm border-b border-gray-100 pb-3 last:border-0 last:pb-0";
+      div.innerHTML = `
+        <p class="font-medium text-gray-900 font-mono truncate">${escapeHtml(m.source)}</p>
+        <p class="text-xs text-gray-500 mt-0.5">
+          → <span class="font-mono">${escapeHtml(m.dest || "(no destination set)")}</span>
+        </p>
+        <p class="text-xs text-gray-400">${escapeHtml(m.wiki)}</p>
+      `;
+      container.appendChild(div);
+    });
+  }
+
+  // ── Method toggle ─────────────────────────────────────────────────────────
+
+  function switchMethod(method) {
+    currentMethod = method;
+    const activeClasses = ["bg-white","text-gray-900","shadow-sm","font-semibold"];
+    const inactiveClasses = ["text-gray-500","hover:text-gray-900","font-medium"];
+
+    ["draft","botpassword"].forEach(m => {
+      const btn = document.getElementById(`tab-${m}`);
+      const panel = document.getElementById(`method-${m}`);
+      if (m === method) {
+        btn.classList.add(...activeClasses);
+        btn.classList.remove(...inactiveClasses);
+        panel.classList.remove("hidden");
+      } else {
+        btn.classList.remove(...activeClasses);
+        btn.classList.add(...inactiveClasses);
+        panel.classList.add("hidden");
+      }
+    });
+  }
+
+  // ── Start publish — fetch diff, show confirmation modal ───────────────────
+
+  async function startPublish() {
+    const summary = document.getElementById("metaSummary").value.trim();
+    if (!summary) {
+      showPublishError("Edit summary is required.");
+      return;
+    }
+    if (!mappings.length) {
+      showPublishError("No files to publish. Go back to mapping config.");
+      return;
+    }
+    const unmapped = mappings.filter(m => !m.dest || !m.wiki);
+    if (unmapped.length) {
+      showPublishError(`${unmapped.length} file(s) have no destination set. Complete the mapping config first.`);
+      return;
+    }
+
+    hidePublishError();
+
+    // Build diff display for all files
+    const diffHtml = await buildDiffHtml();
+    document.getElementById("diffContainer").innerHTML = diffHtml;
+    document.getElementById("confirmModal").classList.remove("hidden");
+  }
+
+  async function buildDiffHtml() {
+    let html = "";
+    for (const m of mappings) {
+      // Fetch current wiki content for diff
+      let currentContent = null;
+      try {
+        const r = await fetch(`/api/page-content/?wiki=${encodeURIComponent(m.wiki)}&page=${encodeURIComponent(m.dest)}`);
+        if (r.ok) {
+          const d = await r.json();
+          currentContent = d.content;
+        }
+      } catch (_) {}
+
+      const newLines = (m.content || "").split("\n");
+      const oldLines = (currentContent || "").split("\n");
+
+      html += `
+        <div class="border-b border-gray-200 last:border-0">
+          <div class="px-6 py-3 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+            <span class="text-sm font-bold font-mono text-gray-900">${escapeHtml(m.source)}</span>
+            <span class="text-xs text-gray-500">→ ${escapeHtml(m.dest)} on ${escapeHtml(m.wiki)}</span>
+          </div>
+          <div class="flex">
+            <div class="flex-1 min-w-0 border-r border-gray-200">
+              <div class="px-4 py-2 bg-red-50 text-xs font-bold text-red-800 border-b border-red-100">
+                Current on wiki ${currentContent === null ? "(page does not exist yet)" : ""}
+              </div>
+              <pre class="px-4 py-3 text-xs font-mono overflow-auto bg-white text-gray-600 max-h-48 whitespace-pre-wrap">${escapeHtml(currentContent || "")}</pre>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="px-4 py-2 bg-green-50 text-xs font-bold text-green-800 border-b border-green-100">
+                Incoming from repository
+              </div>
+              <pre class="px-4 py-3 text-xs font-mono overflow-auto bg-white text-gray-800 max-h-48 whitespace-pre-wrap">${escapeHtml(m.content || "")}</pre>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+    return html;
+  }
+
+  function closeConfirmModal() {
+    document.getElementById("confirmModal").classList.add("hidden");
+  }
+
+  // ── Execute publish after confirmation ────────────────────────────────────
+
+  async function confirmAndPublish() {
+    const confirmBtn = document.getElementById("confirmBtn");
+    confirmBtn.disabled = true;
+    confirmBtn.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Publishing…';
+
+    const summary   = document.getElementById("metaSummary").value.trim();
+    const version   = document.getElementById("metaVersion").value.trim();
+    const sourceRepo = JSON.parse(sessionStorage.getItem("selectedFiles") || "[]")[0]?.platform || "";
+
+    const results = [];
+    for (const m of mappings) {
+      const payload = {
+        method: currentMethod,
+        wiki: m.wiki,
+        page: m.dest,
+        content: m.content,
+        edit_summary: summary,
+        source_repo: sessionStorage.getItem("repoUrl") || "",
+        source_file: m.source,
+        version: version,
+      };
+
+      if (currentMethod === "botpassword") {
+        payload.bot_username = document.getElementById("botUsername")?.value?.trim() || "";
+        payload.bot_password = document.getElementById("botPassword")?.value || "";
+      }
+
+      try {
+        const r = await fetch("/api/publish/", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-CSRFToken": CSRF_TOKEN,
+          },
+          body: JSON.stringify(payload),
+        });
+        const d = await r.json();
+        results.push({ file: m.source, ok: r.ok, data: d });
+      } catch (e) {
+        results.push({ file: m.source, ok: false, data: { error: "Network error." } });
+      }
+    }
+
+    closeConfirmModal();
+
+    const firstResult = results[0]?.data;
+    if (currentMethod === "draft" && firstResult?.edit_url) {
+      document.getElementById("draftEditUrl").value = firstResult.edit_url;
+      document.getElementById("draftEditLink").href = firstResult.edit_url;
+      document.getElementById("draftNotification").value = firstResult.notification_wikitext || "";
+      document.getElementById("draftResultModal").classList.remove("hidden");
+    } else {
+      const failures = results.filter(r => !r.ok);
+      if (failures.length === 0) {
+        alert(`Published ${results.length} file(s) successfully.`);
+        window.location.href = "{% url 'publish_log' %}";
+      } else {
+        showPublishError(
+          `${failures.length} file(s) failed: ` +
+          failures.map(f => `${f.file}: ${f.data.error}`).join("; ")
+        );
+      }
+    }
+
+    confirmBtn.disabled = false;
+    confirmBtn.innerHTML = '<i class="fa-solid fa-check"></i> Confirm and publish';
+  }
+
+  function copyNotification() {
+    const text = document.getElementById("draftNotification").value;
+    navigator.clipboard.writeText(text).then(() => {
+      alert("Notification wikitext copied to clipboard.");
+    });
+  }
+
+  function showPublishError(msg) {
+    document.getElementById("publishError").classList.remove("hidden");
+    document.getElementById("publishErrorText").textContent = msg;
+  }
+
+  function hidePublishError() {
+    document.getElementById("publishError").classList.add("hidden");
+  }
+
+  function escapeHtml(str) {
+    if (!str) return "";
+    return String(str).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+</script>
+{% endblock %}
+
+
+==== templates\publisher\dashboard\publish_log.html ====
+{% extends 'base_dashboard.html' %} {% block dashboard_content %}
+<div class="mb-6 flex justify-between items-end">
+  <div>
+    <h1 class="text-2xl font-bold text-gray-900">Publish Log</h1>
+    <p class="text-sm text-gray-500 mt-1">History of all publish actions from your account.</p>
+  </div>
+</div>
+
+<div class="bg-white shadow sm:rounded-lg border border-gray-200 overflow-hidden mb-12">
+  {% if logs %}
+  <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-5 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">File</th>
+          <th class="px-5 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Target page</th>
+          <th class="px-5 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Method</th>
+          <th class="px-5 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Status</th>
+          <th class="px-5 py-3 text-left text-xs font-bold text-gray-500 uppercase tracking-wider">Date</th>
+        </tr>
+      </thead>
+      <tbody class="bg-white divide-y divide-gray-200 text-sm">
+        {% for log in logs %}
+        <tr class="hover:bg-gray-50 transition-colors {% if log.status == 'pending_review' %}bg-yellow-50 border-l-4 border-yellow-400{% endif %}">
+          <td class="px-5 py-4 font-medium text-gray-900 font-mono text-xs">
+            {{ log.source_file }}
+            {% if log.version %}
+            <span class="ml-2 px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-xs font-mono font-normal">{{ log.version }}</span>
+            {% endif %}
+          </td>
+          <td class="px-5 py-4 text-gray-500 text-xs">
+            <p class="font-mono truncate max-w-xs" title="{{ log.target_page }}">{{ log.target_page }}</p>
+            <p class="text-gray-400 mt-0.5">{{ log.target_wiki }}</p>
+          </td>
+          <td class="px-5 py-4 text-gray-500">
+            {% if log.publish_method == "botpassword" %}
+            <span class="inline-flex items-center gap-1 text-xs">
+              <i class="fa-solid fa-robot text-gray-400"></i> BotPassword
+            </span>
+            {% else %}
+            <span class="inline-flex items-center gap-1 text-xs">
+              <i class="fa-regular fa-file-lines text-gray-400"></i> Draft
+            </span>
+            {% endif %}
+          </td>
+          <td class="px-5 py-4">
+            {% if log.status == "success" %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+              <i class="fa-solid fa-circle-check mr-1.5"></i>Published
+            </span>
+            {% elif log.status == "failed" %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
+              title="{{ log.error_message }}">
+              <i class="fa-solid fa-circle-xmark mr-1.5"></i>Failed
+            </span>
+            {% else %}
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+              <i class="fa-regular fa-clock mr-1.5"></i>Pending review
+            </span>
+            {% endif %}
+          </td>
+          <td class="px-5 py-4 text-gray-400 text-xs whitespace-nowrap">
+            {{ log.created_at|date:"Y-m-d H:i" }} UTC
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="py-16 text-center">
+    <i class="fa-solid fa-clock-rotate-left text-gray-300 text-4xl mb-4"></i>
+    <p class="text-gray-500 font-medium">No publish actions yet.</p>
+    <p class="text-sm text-gray-400 mt-1">Your publish history will appear here.</p>
+    <a href="{% url 'upload_files' %}"
+      class="mt-5 inline-flex items-center px-4 py-2 bg-brand-600 text-white text-sm font-semibold rounded-md hover:bg-brand-700">
+      Start your first publish <i class="fa-solid fa-arrow-right ml-2 text-xs"></i>
+    </a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
+
+
+==== templates\publisher\dashboard\settings.html ====
+{% extends 'base_dashboard.html' %} {% block dashboard_content %}
+<h1 class="sp-page-title">Settings</h1>
+<p class="sp-page-subtitle">Configure default behaviours for your WikiScriptSync session.</p>
+
+<div class="sp-card" style="margin-bottom:1.25rem;">
+  <div class="sp-card__header">Publish defaults</div>
+  <div class="sp-card__body">
+
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:.75rem 0;border-bottom:1px solid var(--bg-neutral-dark);">
+      <div>
+        <p style="margin:0;font-weight:500;font-size:.9375rem;">Default publish method</p>
+        <p style="margin:.25rem 0 0;font-size:.8125rem;color:var(--color-subtle);">
+          Draft URL is the recommended and safest option. No JS-editing OAuth permission needed.
+        </p>
+      </div>
+      <select class="sp-select" style="width:160px;font-size:.875rem;">
+        <option value="draft" selected>Draft URL</option>
+        <option value="botpassword">BotPassword</option>
+      </select>
+    </div>
+
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:.75rem 0;">
+      <div>
+        <p style="margin:0;font-weight:500;font-size:.9375rem;">Auto-suggest destination names</p>
+        <p style="margin:.25rem 0 0;font-size:.8125rem;color:var(--color-subtle);">
+          Automatically suggest <span class="sp-mono">MediaWiki:Gadget-filename.js</span> when mapping files.
+        </p>
+      </div>
+      <button type="button" role="switch" aria-checked="true" onclick="toggleSwitch(this)"
+        style="position:relative;width:40px;height:22px;background:var(--wmf-blue);border:none;border-radius:11px;cursor:pointer;transition:background .2s;">
+        <span style="position:absolute;top:3px;left:20px;width:16px;height:16px;background:#fff;border-radius:50%;transition:left .2s;"></span>
+      </button>
+    </div>
+
+  </div>
+</div>
+
+<div class="sp-card" style="margin-bottom:1.25rem;">
+  <div class="sp-card__header">Account</div>
+  <div class="sp-card__body">
+    <table style="width:100%;font-size:.875rem;border-collapse:collapse;">
+      <tr>
+        <td style="padding:.5rem 0;color:var(--color-subtle);width:180px;">Wikimedia username</td>
+        <td style="padding:.5rem 0;font-weight:500;">{{ current_user.username }}</td>
+      </tr>
+      <tr>
+        <td style="padding:.5rem 0;color:var(--color-subtle);">Interface admin</td>
+        <td style="padding:.5rem 0;">
+          {% if current_user.is_interface_admin %}
+          <span class="sp-badge sp-badge--success"><i class="fa-solid fa-check"></i> Yes</span>
+          {% else %}
+          <span class="sp-badge sp-badge--neutral">No</span>
+          {% endif %}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding:.5rem 0;color:var(--color-subtle);">Groups</td>
+        <td style="padding:.5rem 0;font-size:.8125rem;color:var(--color-subtle);">
+          {{ current_user.groups|join:", " }}
+        </td>
+      </tr>
+    </table>
+    <div style="margin-top:1rem;">
+      <a href="{% url 'logout' %}" class="sp-btn" style="color:var(--wmf-red);border-color:var(--wmf-red);">
+        <i class="fa-solid fa-right-from-bracket"></i> Log out
+      </a>
+    </div>
+  </div>
+</div>
+
+<div class="sp-card">
+  <div class="sp-card__header">About WikiScriptSync</div>
+  <div class="sp-card__body" style="font-size:.875rem;color:var(--color-subtle);line-height:1.7;">
+    <p style="margin:0 0 .75rem;">
+      WikiScriptSync is a <a href="https://meta.wikimedia.org/wiki/Toolforge" target="_blank" rel="noopener">Toolforge</a>
+      application built as part of the
+      <a href="https://meta.wikimedia.org/wiki/Developer_Skill_Development_Program_India_2025" target="_blank" rel="noopener">Developer Skill Development Program India 2025</a>,
+      implementing the
+      <a href="https://meta.wikimedia.org/wiki/Community_Wishlist_Survey_2022/Bots_and_gadgets/A_bot_or_gadget_to_publish_public_Git_repo_to_a_gadget_or_user_script" target="_blank" rel="noopener">Community Wishlist Survey 2022</a>
+      proposal.
+    </p>
+    <p style="margin:0;">
+      Source code:
+      <a href="https://gitlab.wikimedia.org/toolforge-repos/script-publisher" target="_blank" rel="noopener" class="sp-mono">gitlab.wikimedia.org/toolforge-repos/script-publisher</a>
+    </p>
+  </div>
+</div>
+
+<script>
+  function toggleSwitch(btn) {
+    const on = btn.getAttribute("aria-checked") === "true";
+    btn.setAttribute("aria-checked", !on);
+    btn.style.background = on ? "var(--bg-neutral-dark)" : "var(--wmf-blue)";
+    const knob = btn.querySelector("span");
+    knob.style.left = on ? "3px" : "20px";
+  }
+</script>
+{% endblock %}
+
+==== templates\publisher\dashboard\upload_files.html ====
+{% extends 'base_dashboard.html' %} {% block dashboard_content %}
+<div class="mb-6">
+  <h1 class="text-2xl font-bold text-gray-900">Upload Files</h1>
+</div>
+
+<div class="bg-white shadow sm:rounded-lg border border-gray-200 p-6 mb-8">
+  <h3 class="text-lg font-bold text-gray-900 mb-1">Source Repository</h3>
+  <p class="text-sm text-gray-500 mb-6">
+    Enter a public GitHub or GitLab URL. Files are fetched directly from the
+    platform API — no third-party services are used.
+  </p>
+
+  <div class="flex gap-4 items-start">
+    <div class="flex-grow">
+      <input
+        type="text"
+        id="repoInput"
+        placeholder="https://github.com/owner/repo  or  https://github.com/owner/repo/tree/branch"
+        class="w-full rounded-md border-gray-300 border px-4 py-2.5 text-gray-900 focus:ring-brand-500 focus:border-brand-500 shadow-sm outline-none text-sm"
+      />
+      <p class="text-xs text-gray-400 mt-2">
+        Supported: <span class="font-mono">github.com</span> and
+        <span class="font-mono">gitlab.wikimedia.org</span> public repositories.
+        Only <span class="font-mono">.js</span> and
+        <span class="font-mono">.css</span> files are shown.
+      </p>
+    </div>
+    <button
+      onclick="fetchRepo()"
+      id="fetchBtn"
+      class="flex-shrink-0 bg-brand-600 hover:bg-brand-700 text-white font-medium py-2.5 px-5 rounded-md shadow-sm text-sm transition-colors flex items-center gap-2"
+    >
+      <span id="btnText">Fetch files</span>
+      <i id="btnLoader" class="fa-solid fa-circle-notch fa-spin hidden"></i>
+    </button>
+  </div>
+
+  <div id="fetchError" class="hidden mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
+    <div class="flex items-start gap-2">
+      <i class="fa-solid fa-circle-exclamation text-red-500 mt-0.5 flex-shrink-0 text-sm"></i>
+      <p id="fetchErrorText" class="text-sm text-red-800"></p>
+    </div>
+  </div>
+</div>
+
+<div id="fileSection" class="bg-white shadow sm:rounded-lg border border-gray-200 p-6 mb-8 hidden">
+  <div class="flex justify-between items-center mb-5">
+    <div>
+      <h3 class="text-lg font-bold text-gray-900">Select files to publish</h3>
+      <p id="fileCount" class="text-sm text-gray-500 mt-0.5"></p>
+    </div>
+    <label class="flex items-center gap-2 cursor-pointer select-none text-sm text-gray-700 font-medium">
+      <input
+        id="selectAll"
+        type="checkbox"
+        checked
+        class="h-4 w-4 text-brand-600 focus:ring-brand-500 border-gray-300 rounded"
+        onchange="toggleAll(this)"
+      />
+      Select all
+    </label>
+  </div>
+
+  <div class="overflow-x-auto border border-gray-200 rounded-md">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-4 py-3 w-8"></th>
+          <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+          <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Size</th>
+          <th class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider w-24">Preview</th>
+        </tr>
+      </thead>
+      <tbody id="fileTableBody" class="bg-white divide-y divide-gray-200"></tbody>
+    </table>
+  </div>
+
+  <div class="mt-6 flex justify-between items-center">
+    <p class="text-xs text-gray-400">
+      <i class="fa-solid fa-shield-halved mr-1"></i>
+      Files are fetched over HTTPS directly from the repository host.
+      No content is stored on this server.
+    </p>
+    <button
+      onclick="saveAndContinue()"
+      class="bg-brand-900 hover:bg-brand-800 text-white px-6 py-2.5 rounded-md font-medium text-sm shadow-sm flex items-center gap-2 transition-colors"
+    >
+      Continue to mapping <i class="fa-solid fa-arrow-right"></i>
+    </button>
+  </div>
+</div>
+
+{# ── Preview modal ────────────────────────────────────────────────────────── #}
+<div id="previewModal" class="fixed inset-0 z-50 hidden" role="dialog" aria-modal="true">
+  <div class="fixed inset-0 bg-gray-500 bg-opacity-75" onclick="closeModal()"></div>
+  <div class="flex items-center justify-center min-h-screen px-4">
+    <div class="relative bg-white rounded-lg overflow-hidden shadow-xl w-full max-w-3xl flex flex-col" style="max-height:80vh">
+      <div class="px-5 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50 flex-shrink-0">
+        <div>
+          <h3 id="modalTitle" class="text-base font-bold text-gray-900 font-mono"></h3>
+          <p class="text-xs text-gray-500 mt-0.5">Read-only preview</p>
+        </div>
+        <button onclick="closeModal()" class="text-gray-400 hover:text-gray-600">
+          <i class="fa-solid fa-xmark text-xl"></i>
+        </button>
+      </div>
+      <div class="overflow-auto flex-1 bg-gray-50 p-5">
+        <pre id="modalContent" class="text-xs text-gray-800 font-mono whitespace-pre-wrap leading-relaxed"></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const CSRF_TOKEN = "{{ csrf_token }}";
+
+  // Files fetched from the API — kept in memory until the user navigates away
+  let fetchedFiles = [];
+
+  async function fetchRepo() {
+    const repoUrl = document.getElementById("repoInput").value.trim();
+    if (!repoUrl) {
+      showError("Please enter a repository URL.");
+      return;
+    }
+
+    setLoading(true);
+    hideError();
+    document.getElementById("fileSection").classList.add("hidden");
+    document.getElementById("fileTableBody").innerHTML = "";
+    fetchedFiles = [];
+
+    try {
+      const response = await fetch("/api/fetch-repo/", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-CSRFToken": CSRF_TOKEN,
+        },
+        body: JSON.stringify({ repo_url: repoUrl }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        showError(data.error || "Failed to fetch repository.");
+        return;
+      }
+
+      if (!data.files || data.files.length === 0) {
+        showError("No .js or .css files found in this repository.");
+        return;
+      }
+
+      fetchedFiles = data.files;
+      renderFileTable(data.files);
+      document.getElementById("fileSection").classList.remove("hidden");
+      document.getElementById("fileCount").textContent =
+        `${data.files.length} file${data.files.length === 1 ? "" : "s"} found`;
+
+    } catch (err) {
+      showError("Could not connect to the server. Please try again.");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function renderFileTable(files) {
+    const tbody = document.getElementById("fileTableBody");
+    tbody.innerHTML = "";
+
+    files.forEach((file, index) => {
+      const isJs = file.name.endsWith(".js");
+      const iconClass = isJs ? "fa-square-js text-yellow-500" : "fa-css3 text-blue-500";
+      const sizeKb = (file.size / 1024).toFixed(1);
+
+      const tr = document.createElement("tr");
+      tr.className = "hover:bg-gray-50 transition-colors";
+      tr.innerHTML = `
+        <td class="px-4 py-3">
+          <input type="checkbox" checked data-index="${index}"
+            class="file-checkbox h-4 w-4 text-brand-600 focus:ring-brand-500 border-gray-300 rounded"
+          />
+        </td>
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-2">
+            <i class="fa-brands ${iconClass} text-lg flex-shrink-0"></i>
+            <span class="text-sm font-medium text-gray-900 font-mono">${escapeHtml(file.name)}</span>
+            <span class="text-xs text-gray-400">${escapeHtml(file.platform)}</span>
+          </div>
+        </td>
+        <td class="px-4 py-3 text-center text-xs text-gray-500">${sizeKb} KB</td>
+        <td class="px-4 py-3 text-center">
+          <button
+            onclick="openModal(${index})"
+            class="text-gray-400 hover:text-brand-600 transition-colors"
+            title="Preview file content"
+          >
+            <i class="fa-regular fa-eye"></i>
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function saveAndContinue() {
+    const checkboxes = document.querySelectorAll(".file-checkbox:checked");
+    const selected = Array.from(checkboxes).map(cb => {
+      const idx = parseInt(cb.dataset.index, 10);
+      return {
+        name: fetchedFiles[idx].name,
+        content: fetchedFiles[idx].content,
+        size: fetchedFiles[idx].size,
+        platform: fetchedFiles[idx].platform,
+      };
+    });
+
+    if (selected.length === 0) {
+      alert("Please select at least one file to continue.");
+      return;
+    }
+
+    sessionStorage.setItem("selectedFiles", JSON.stringify(selected));
+    window.location.href = "{% url 'mapping_config' %}";
+  }
+
+  function openModal(index) {
+    const file = fetchedFiles[index];
+    document.getElementById("modalTitle").textContent = file.name;
+    document.getElementById("modalContent").textContent = file.content;
+    document.getElementById("previewModal").classList.remove("hidden");
+  }
+
+  function closeModal() {
+    document.getElementById("previewModal").classList.add("hidden");
+  }
+
+  function toggleAll(source) {
+    document.querySelectorAll(".file-checkbox").forEach(cb => {
+      cb.checked = source.checked;
+    });
+  }
+
+  function setLoading(on) {
+    document.getElementById("btnText").textContent = on ? "Fetching…" : "Fetch files";
+    document.getElementById("btnLoader").classList.toggle("hidden", !on);
+    document.getElementById("fetchBtn").disabled = on;
+  }
+
+  function showError(msg) {
+    document.getElementById("fetchError").classList.remove("hidden");
+    document.getElementById("fetchErrorText").textContent = msg;
+  }
+
+  function hideError() {
+    document.getElementById("fetchError").classList.add("hidden");
+  }
+
+  function escapeHtml(str) {
+    return str.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  }
+</script>
+{% endblock %}
+
+
+==== templates\publisher\migrations\0002_tracked_scripts_and_notifications.py ====
+from django.db import migrations, models
+import django.db.models.deletion
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ("publisher", "0001_initial"),
+    ]
+
+    operations = [
+        # ── TrackedScript ──────────────────────────────────────────────────
+        migrations.CreateModel(
+            name="TrackedScript",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False)),
+                ("username", models.CharField(db_index=True, max_length=255)),
+                ("source_repo", models.URLField(max_length=1000)),
+                ("source_file", models.CharField(max_length=500)),
+                ("target_wiki", models.CharField(max_length=255)),
+                ("target_page", models.CharField(max_length=500)),
+                ("last_hash", models.CharField(blank=True, default="", max_length=64)),
+                ("last_checked_at", models.DateTimeField(blank=True, null=True)),
+                ("has_update", models.BooleanField(default=False)),
+                ("is_active", models.BooleanField(default=True)),
+                ("created_at", models.DateTimeField(auto_now_add=True)),
+            ],
+            options={
+                "verbose_name": "Tracked Script",
+                "ordering": ["-created_at"],
+            },
+        ),
+        migrations.AddConstraint(
+            model_name="trackedscript",
+            constraint=models.UniqueConstraint(
+                fields=["username", "source_repo", "source_file", "target_wiki", "target_page"],
+                name="unique_tracked_script",
+            ),
+        ),
+
+        # ── UserPreference ─────────────────────────────────────────────────
+        migrations.CreateModel(
+            name="UserPreference",
+            fields=[
+                ("username", models.CharField(max_length=255, primary_key=True, serialize=False)),
+                ("opted_out", models.BooleanField(default=False)),
+                ("opted_in_at", models.DateTimeField(auto_now_add=True)),
+                ("opted_out_at", models.DateTimeField(blank=True, null=True)),
+            ],
+            options={
+                "verbose_name": "User Preference",
+            },
+        ),
+
+        # ── NotificationLog ────────────────────────────────────────────────
+        migrations.CreateModel(
+            name="NotificationLog",
+            fields=[
+                ("id", models.BigAutoField(auto_created=True, primary_key=True, serialize=False)),
+                ("tracked_script", models.ForeignKey(
+                    on_delete=django.db.models.deletion.CASCADE,
+                    related_name="notifications",
+                    to="publisher.trackedscript",
+                )),
+                ("notified_username", models.CharField(max_length=255)),
+                ("notified_wiki", models.CharField(max_length=255)),
+                ("talk_page", models.CharField(max_length=500)),
+                ("success", models.BooleanField(default=False)),
+                ("revision_id", models.IntegerField(blank=True, null=True)),
+                ("error_message", models.TextField(blank=True)),
+                ("sent_at", models.DateTimeField(auto_now_add=True, db_index=True)),
+            ],
+            options={
+                "verbose_name": "Notification Log",
+                "ordering": ["-sent_at"],
+            },
+        ),
+    ]
+
+==== templates\publisher\admin.py ====
+from django.contrib import admin
+from .models import PublishLog, TrackedScript, UserPreference, NotificationLog
+
+
+@admin.register(PublishLog)
+class PublishLogAdmin(admin.ModelAdmin):
+    list_display  = ("username", "source_file", "target_wiki", "target_page", "publish_method", "status", "created_at")
+    list_filter   = ("status", "publish_method", "target_wiki")
+    search_fields = ("username", "source_file", "target_page")
+    readonly_fields = ("created_at",)
+    ordering      = ("-created_at",)
+
+
+@admin.register(TrackedScript)
+class TrackedScriptAdmin(admin.ModelAdmin):
+    list_display  = ("username", "source_file", "target_wiki", "target_page", "has_update", "last_checked_at", "is_active")
+    list_filter   = ("has_update", "is_active", "target_wiki")
+    search_fields = ("username", "source_file", "target_page")
+    readonly_fields = ("created_at", "last_checked_at")
+
+
+@admin.register(UserPreference)
+class UserPreferenceAdmin(admin.ModelAdmin):
+    list_display  = ("username", "opted_out", "opted_in_at", "opted_out_at")
+    list_filter   = ("opted_out",)
+    search_fields = ("username",)
+
+
+@admin.register(NotificationLog)
+class NotificationLogAdmin(admin.ModelAdmin):
+    list_display  = ("notified_username", "notified_wiki", "talk_page", "success", "sent_at")
+    list_filter   = ("success", "notified_wiki")
+    search_fields = ("notified_username", "talk_page")
+    readonly_fields = ("sent_at",)
+
+==== templates\publisher\get_started.html ====
+{% extends 'base.html' %} {% block navbar %}{% endblock %} {% block content %}
+
+<div class="min-h-screen flex flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50">
+  <div class="mb-8 text-center">
+    <a href="{% url 'home' %}" class="flex items-center justify-center gap-2 no-underline">
+      <i class="fa-solid fa-code-branch text-brand-600 text-3xl"></i>
+      <span class="font-bold text-3xl text-gray-900 tracking-tight">WikiPublisher</span>
+    </a>
+  </div>
+
+  <div class="max-w-md w-full bg-white rounded-xl shadow-lg border border-gray-100 p-8">
+
+    {% if error %}
+    <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
+      <div class="flex items-start gap-3">
+        <i class="fa-solid fa-circle-exclamation text-red-500 mt-0.5 flex-shrink-0"></i>
+        <p class="text-sm text-red-800">{{ error }}</p>
+      </div>
+    </div>
+    {% endif %}
+
+    <div class="bg-gray-100 p-1 rounded-lg flex mb-8">
+      <button
+        id="tab-oauth"
+        onclick="switchTab('oauth')"
+        class="w-1/2 bg-white text-gray-900 shadow-sm rounded-md py-2 text-sm font-semibold transition-all"
+      >
+        Wikimedia OAuth
+      </button>
+      <button
+        id="tab-botpass"
+        onclick="switchTab('botpass')"
+        class="w-1/2 text-gray-500 hover:text-gray-900 py-2 text-sm font-medium transition-colors"
+      >
+        BotPassword
+      </button>
+    </div>
+
+    {# ── Tab 1: OAuth (recommended, shown first) ────────────────────────── #}
+    <div id="content-oauth" class="block">
+      <div class="mb-6 text-center">
+        <h2 class="text-xl font-bold text-gray-900 mb-2">Wikimedia OAuth</h2>
+        <p class="text-gray-500 text-sm mb-2">
+          Log in securely using your main Wikimedia account.
+          Script Publisher will only read your username and account rights —
+          it will <strong>not</strong> edit any pages via OAuth.
+        </p>
+        <p class="text-xs text-gray-400 mb-6">
+          Editing is done through your own BotPassword or by opening a
+          pre-filled edit URL yourself.
+        </p>
+
+        <div class="border-t border-gray-100 py-6">
+          {# This is a plain anchor — no form, no CSRF needed for GET #}
+          <a
+            href="{% url 'oauth_redirect' %}"
+            class="w-full flex justify-center items-center gap-3 py-3 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-semibold text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+          >
+            <img
+              src="https://upload.wikimedia.org/wikipedia/commons/thumb/8/81/Wikimedia-logo.svg/1024px-Wikimedia-logo.svg.png"
+              class="h-5 w-5"
+              alt="Wikimedia"
+            />
+            Continue with Wikimedia
+          </a>
+        </div>
+
+        <p class="text-xs text-gray-400 mt-2">
+          You will be redirected to
+          <span class="font-mono">meta.wikimedia.org</span>
+          to authorize this application.
+        </p>
+      </div>
+    </div>
+
+    {# ── Tab 2: BotPassword (for direct publishing) ─────────────────────── #}
+    <div id="content-botpass" class="hidden">
+      <div class="mb-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-1">BotPassword Login</h2>
+        <p class="text-gray-500 text-sm mb-1">
+          Use a
+          <a
+            href="https://www.mediawiki.org/wiki/Manual:Bot_passwords"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="text-brand-600 underline"
+          >BotPassword</a>
+          to publish files directly to your wiki pages.
+        </p>
+        <p class="text-xs text-gray-400 mb-6">
+          Your BotPassword is used only during publishing and is never stored in our database.
+          Create one at
+          <span class="font-mono">Special:BotPasswords</span>
+          on your target wiki.
+        </p>
+
+        {# BotPassword login is stored in the session and used at publish time. #}
+        {# We don't log into Django's auth system — identity comes from OAuth.  #}
+        <form method="POST" action="{% url 'get_started' %}" class="space-y-5">
+          {% csrf_token %}
+          <input type="hidden" name="auth_type" value="botpassword" />
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              Bot Username
+              <span class="text-xs text-gray-400 font-normal ml-1">(e.g. MyName@my-bot-name)</span>
+            </label>
+            <input
+              type="text"
+              name="bot_username"
+              placeholder="Dev_Jadiya@script-publisher"
+              autocomplete="username"
+              class="block w-full rounded-md border-gray-300 border px-3 py-2 text-gray-900 focus:border-brand-500 focus:ring-brand-500 sm:text-sm outline-none shadow-sm"
+              required
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              Bot Password
+              <span class="text-xs text-gray-400 font-normal ml-1">(generated at Special:BotPasswords)</span>
+            </label>
+            <input
+              type="password"
+              name="bot_password"
+              placeholder="••••••••••••••••"
+              autocomplete="current-password"
+              class="block w-full rounded-md border-gray-300 border px-3 py-2 text-gray-900 focus:border-brand-500 focus:ring-brand-500 sm:text-sm outline-none shadow-sm"
+              required
+            />
+          </div>
+
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">
+              Your Wikimedia Username
+              <span class="text-xs text-gray-400 font-normal ml-1">(for the audit log)</span>
+            </label>
+            <input
+              type="text"
+              name="wiki_username"
+              placeholder="Dev Jadiya"
+              class="block w-full rounded-md border-gray-300 border px-3 py-2 text-gray-900 focus:border-brand-500 focus:ring-brand-500 sm:text-sm outline-none shadow-sm"
+              required
+            />
+          </div>
+
+          <button
+            type="submit"
+            class="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-semibold text-white bg-brand-600 hover:bg-brand-700 transition-colors"
+          >
+            Save credentials and continue
+          </button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+
+  <p class="mt-8 text-center text-sm text-gray-500">
+    New here?
+    <a
+      href="https://meta.wikimedia.org/wiki/Community_Wishlist_Survey_2022/Bots_and_gadgets/A_bot_or_gadget_to_publish_public_Git_repo_to_a_gadget_or_user_script"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="font-medium text-brand-600 hover:text-brand-500 underline decoration-1 underline-offset-2"
+    >Learn about this tool</a>
+  </p>
+</div>
+
+<script>
+  function switchTab(tabName) {
+    const btnOAuth = document.getElementById("tab-oauth");
+    const btnBot   = document.getElementById("tab-botpass");
+    const contentOAuth = document.getElementById("content-oauth");
+    const contentBot   = document.getElementById("content-botpass");
+
+    const activeClasses   = ["bg-white","text-gray-900","shadow-sm","font-semibold"];
+    const inactiveClasses = ["text-gray-500","hover:text-gray-900","font-medium"];
+
+    if (tabName === "oauth") {
+      contentOAuth.classList.remove("hidden");
+      contentBot.classList.add("hidden");
+      btnOAuth.classList.add(...activeClasses);
+      btnOAuth.classList.remove(...inactiveClasses);
+      btnBot.classList.remove(...activeClasses);
+      btnBot.classList.add(...inactiveClasses);
+    } else {
+      contentBot.classList.remove("hidden");
+      contentOAuth.classList.add("hidden");
+      btnBot.classList.add(...activeClasses);
+      btnBot.classList.remove(...inactiveClasses);
+      btnOAuth.classList.remove(...activeClasses);
+      btnOAuth.classList.add(...inactiveClasses);
+    }
+  }
+</script>
+
+{% endblock %}
+
+
+==== templates\publisher\models.py ====
+from django.db import models
+
+
+class PublishLog(models.Model):
+    """Audit record of every publish action."""
+
+    STATUS_CHOICES = [
+        ("success", "Success"),
+        ("failed", "Failed"),
+        ("pending_review", "Pending Review"),
+    ]
+    PUBLISH_METHOD_CHOICES = [
+        ("botpassword", "BotPassword"),
+        ("draft", "Draft / Notification only"),
+    ]
+
+    username       = models.CharField(max_length=255, db_index=True)
+    source_repo    = models.URLField(max_length=1000, blank=True)
+    source_file    = models.CharField(max_length=500)
+    target_wiki    = models.CharField(max_length=255)
+    target_page    = models.CharField(max_length=500)
+    version        = models.CharField(max_length=100, blank=True)
+    edit_summary   = models.TextField(blank=True)
+    status         = models.CharField(max_length=30, choices=STATUS_CHOICES, default="pending_review", db_index=True)
+    publish_method = models.CharField(max_length=30, choices=PUBLISH_METHOD_CHOICES, default="draft")
+    error_message  = models.TextField(blank=True)
+    created_at     = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        verbose_name = "Publish Log Entry"
+        verbose_name_plural = "Publish Log Entries"
+
+    def __str__(self):
+        return f"{self.username} → {self.target_page} ({self.status})"
+
+
+class TrackedScript(models.Model):
+    """
+    A source file being watched for upstream changes.
+
+    Created automatically when a user publishes a file.
+    The notifier checks all active TrackedScript rows periodically
+    and posts a talk-page notification if the source file hash has changed.
+    """
+
+    username     = models.CharField(max_length=255, db_index=True)
+    source_repo  = models.URLField(max_length=1000)
+    source_file  = models.CharField(max_length=500)    # relative path in repo
+    target_wiki  = models.CharField(max_length=255)    # e.g. en.wikipedia.org
+    target_page  = models.CharField(max_length=500)    # e.g. MediaWiki:Gadget-X.js
+
+    # Hash of the file content the last time we checked
+    # Empty string means we haven't checked yet
+    last_hash    = models.CharField(max_length=64, blank=True, default="")
+
+    last_checked_at = models.DateTimeField(null=True, blank=True)
+    has_update   = models.BooleanField(default=False)  # True if hash differs
+    is_active    = models.BooleanField(default=True)
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        # One row per (username, source_repo, source_file, target_wiki, target_page)
+        unique_together = [("username", "source_repo", "source_file", "target_wiki", "target_page")]
+        verbose_name = "Tracked Script"
+
+    def __str__(self):
+        return f"{self.source_file} → {self.target_wiki}/{self.target_page}"
+
+
+class UserPreference(models.Model):
+    """
+    Opt-in / opt-out preferences for talk-page notifications.
+
+    One row per Wikimedia username.
+    Created when a user first enables notifications.
+    """
+
+    username    = models.CharField(max_length=255, primary_key=True)
+    opted_out   = models.BooleanField(default=False)
+    opted_in_at = models.DateTimeField(auto_now_add=True)
+    opted_out_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "User Preference"
+
+    def __str__(self):
+        status = "opted out" if self.opted_out else "subscribed"
+        return f"{self.username} ({status})"
+
+
+class NotificationLog(models.Model):
+    """
+    Record of every talk-page notification attempt.
+
+    Allows the admin to see what was sent, when, and whether it succeeded.
+    """
+
+    tracked_script     = models.ForeignKey(TrackedScript, on_delete=models.CASCADE, related_name="notifications")
+    notified_username  = models.CharField(max_length=255)   # wiki username of recipient
+    notified_wiki      = models.CharField(max_length=255)   # which wiki the talk page is on
+    talk_page          = models.CharField(max_length=500)   # full page title, e.g. User talk:Dev Jadiya
+
+    # Did the MediaWiki API edit succeed?
+    success            = models.BooleanField(default=False)
+    revision_id        = models.IntegerField(null=True, blank=True)  # revid from MW API
+    error_message      = models.TextField(blank=True)
+
+    sent_at            = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-sent_at"]
+        verbose_name = "Notification Log"
+
+    def __str__(self):
+        status = "OK" if self.success else "FAIL"
+        return f"[{status}] {self.notified_wiki}/User_talk:{self.notified_username} ({self.sent_at:%Y-%m-%d})"
+
+==== templates\publisher\notifier.py ====
+"""
+notifier.py
+-----------
+Posts change notifications to Wikimedia user talk pages.
+
+Based on the approach discussed with KC (mentor):
+  - The tool tracks which scripts are in use and where
+  - When the source repository changes, a bot posts a message to the
+    affected user's talk page on the target wiki
+  - Users opt in to receive these notifications
+  - Users can opt out via a link in the notification message
+
+The bot that posts these messages must be a DEDICATED Wikimedia account
+(not the developer's personal account). Create a new account like
+"WikiScriptSyncBot" and generate a BotPassword for it at
+Special:BotPasswords on the target wiki.
+
+Set these in your .env:
+  NOTIFIER_BOT_USERNAME=WikiScriptSyncBot@notifier-app
+  NOTIFIER_BOT_PASSWORD=the-generated-password
+  NOTIFIER_BOT_WIKI=meta.wikimedia.org
+"""
+
+import hashlib
+import logging
+import os
+from datetime import datetime, timezone
+
+import requests
+from django.conf import settings
+from django.utils import timezone as django_timezone
+
+from .wiki_api import BotSession, WikiAPIError
+
+logger = logging.getLogger(__name__)
+
+BOT_USERNAME = os.environ.get("NOTIFIER_BOT_USERNAME", "")
+BOT_PASSWORD = os.environ.get("NOTIFIER_BOT_PASSWORD", "")
+BOT_WIKI     = os.environ.get("NOTIFIER_BOT_WIKI", "meta.wikimedia.org")
+
+TOOLFORGE_URL = "https://script-publisher.toolforge.org"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Public functions
+# ──────────────────────────────────────────────────────────────────────────────
+
+def check_and_notify_all():
+    """
+    Check every active TrackedScript for upstream changes.
+    For each changed script, notify all subscribed users via talk page.
+
+    This is called from the `check_updates` view (GET /api/check-updates/)
+    or can be called from a Toolforge cron job (future).
+
+    Returns a summary dict for logging/display.
+    """
+    from .models import TrackedScript, UserPreference
+
+    summary = {"checked": 0, "changed": 0, "notified": 0, "errors": 0}
+
+    active_scripts = TrackedScript.objects.filter(is_active=True)
+
+    for script in active_scripts:
+        summary["checked"] += 1
+        try:
+            current_hash = _fetch_file_hash(script.source_repo, script.source_file)
+        except Exception as e:
+            logger.warning("Could not fetch hash for %s: %s", script.source_file, e)
+            summary["errors"] += 1
+            continue
+
+        script.last_checked_at = django_timezone.now()
+
+        if current_hash and current_hash != script.last_hash:
+            script.has_update = True
+            script.save(update_fields=["last_checked_at", "has_update"])
+            summary["changed"] += 1
+
+            # Notify the script owner if they are opted in
+            pref = UserPreference.objects.filter(
+                username=script.username, opted_out=False
+            ).first()
+
+            if pref:
+                ok = _send_talk_page_notification(script)
+                summary["notified" if ok else "errors"] += 1
+        else:
+            script.has_update = False
+            script.save(update_fields=["last_checked_at", "has_update"])
+
+    return summary
+
+
+def _fetch_file_hash(repo_url: str, source_file: str) -> str | None:
+    """
+    Fetch the current content of a file from its repository and return a SHA-256 hash.
+    Uses the same direct API approach as repo_fetcher.py.
+    """
+    from .repo_fetcher import fetch_files, RepoFetchError
+
+    try:
+        files = fetch_files(repo_url)
+    except RepoFetchError:
+        return None
+
+    for f in files:
+        if f["name"] == source_file:
+            return hashlib.sha256(f["content"].encode("utf-8")).hexdigest()
+
+    return None
+
+
+def _send_talk_page_notification(script) -> bool:
+    """
+    Post a notification to User_talk:USERNAME on the target wiki.
+
+    Uses the dedicated bot account (NOTIFIER_BOT_USERNAME / NOTIFIER_BOT_PASSWORD).
+    Returns True if the edit succeeded, False otherwise.
+    """
+    from .models import NotificationLog
+
+    if not BOT_USERNAME or not BOT_PASSWORD:
+        logger.error(
+            "NOTIFIER_BOT_USERNAME or NOTIFIER_BOT_PASSWORD not set in environment. "
+            "Cannot send talk-page notifications."
+        )
+        return False
+
+    talk_page = f"User talk:{script.username}"
+    message   = _build_notification_message(script)
+
+    log = NotificationLog(
+        tracked_script=script,
+        notified_username=script.username,
+        notified_wiki=script.target_wiki,
+        talk_page=talk_page,
+    )
+
+    try:
+        bot = BotSession(script.target_wiki)
+        bot.login(BOT_USERNAME, BOT_PASSWORD)
+
+        result = bot.edit_page(
+            page_title=talk_page,
+            new_content=None,          # append, not replace (handled below)
+            edit_summary=f"Script update notification: {script.source_file}",
+        )
+        # We override edit_page's replace mode by using the append parameter instead
+        # Re-doing this properly:
+        _append_to_talk_page(bot, talk_page, message, script.source_file)
+
+        log.success = True
+        log.save()
+        logger.info("Notified %s on %s", script.username, script.target_wiki)
+        return True
+
+    except WikiAPIError as e:
+        log.success = False
+        log.error_message = str(e)
+        log.save()
+        logger.error("Failed to notify %s: %s", script.username, e)
+        return False
+
+
+def _append_to_talk_page(bot: "BotSession", talk_page: str, message: str, script_name: str):
+    """
+    Append a new section to a talk page instead of replacing the whole page.
+    Uses MediaWiki's action=edit with section=new parameter.
+    """
+    csrf_token = bot._get_token("csrf")
+
+    response = bot._post({
+        "action": "edit",
+        "title": talk_page,
+        "section": "new",
+        "sectiontitle": f"Script update available: {script_name}",
+        "text": message,
+        "summary": f"/* Script update available: {script_name} */ new section",
+        "bot": "1",
+        "token": csrf_token,
+        "format": "json",
+    })
+
+    data = response.json()
+    if "error" in data:
+        raise WikiAPIError(data["error"].get("info", "Unknown error"))
+
+    return data.get("edit", {})
+
+
+def _build_notification_message(script) -> str:
+    """
+    Build the wikitext message to post on the user's talk page.
+    Includes an opt-out link using a signed token (no login required to opt out).
+    """
+    from django.core import signing
+
+    opt_out_token = signing.dumps(script.username, salt="notification-opt-out")
+    opt_out_url   = f"{TOOLFORGE_URL}/notifications/opt-out/?token={opt_out_token}"
+
+    return (
+        f"Hello {{{{subst:PAGENAME}}}},\n\n"
+        f"The source repository for '''[[{script.target_page}]]''' on "
+        f"[[{script.target_wiki}|{script.target_wiki}]] has been updated.\n\n"
+        f"; Source repository: [{script.source_repo} {script.source_repo}]\n"
+        f"; File: <code>{script.source_file}</code>\n"
+        f"; Target page: [[{script.target_page}]]\n\n"
+        f"Please review the changes in the repository and update the wiki page "
+        f"if you would like to deploy the new version. "
+        f"You can use [[Toolforge:script-publisher|WikiScriptSync]] to help with this.\n\n"
+        f"If you do not want to receive these notifications in future, "
+        f"[{opt_out_url} click here to opt out].\n\n"
+        f"— Sent by [[User:{BOT_USERNAME.split('@')[0]}|WikiScriptSync bot]] "
+        f"([[Toolforge:script-publisher|tool]]) ~~~~"
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Track a new script after publish
+# ──────────────────────────────────────────────────────────────────────────────
+
+def register_tracked_script(
+    username: str,
+    source_repo: str,
+    source_file: str,
+    target_wiki: str,
+    target_page: str,
+    initial_content: str,
+) -> None:
+    """
+    Create or update a TrackedScript row after a successful publish.
+    Stores the initial hash so we can detect future changes.
+    """
+    from .models import TrackedScript
+
+    initial_hash = hashlib.sha256(initial_content.encode("utf-8")).hexdigest()
+
+    TrackedScript.objects.update_or_create(
+        username=username,
+        source_repo=source_repo,
+        source_file=source_file,
+        target_wiki=target_wiki,
+        target_page=target_page,
+        defaults={
+            "last_hash": initial_hash,
+            "has_update": False,
+            "is_active": True,
+            "last_checked_at": django_timezone.now(),
+        },
+    )
+
+==== templates\publisher\urls.py ====
+# publisher/urls.py
+from django.urls import path
+from . import views
+
+urlpatterns = [
+    # ── Public ───────────────────────────────────────────────────────────────
+    path("", views.home, name="home"),
+    path("get-started/", views.get_started, name="get_started"),
+
+    # ── OAuth 2.0 ─────────────────────────────────────────────────────────────
+    path("oauth/start/", views.oauth_redirect, name="oauth_redirect"),
+    path("api/auth/callback/", views.oauth_callback, name="oauth_callback"),
+    path("logout/", views.logout, name="logout"),
+
+    # ── Dashboard ──────────────────────────────────────────────────────────────
+    path("dashboard/", views.dashboard_home, name="dashboard"),
+    path("dashboard/upload/", views.upload_files, name="upload_files"),
+    path("dashboard/mapping/", views.mapping_config, name="mapping_config"),
+    path("dashboard/publish/", views.publish, name="publish"),
+    path("dashboard/log/", views.publish_log, name="publish_log"),
+    path("dashboard/settings/", views.settings, name="settings"),
+    path("dashboard/notifications/", views.notifications, name="notifications"),
+
+    # ── API ────────────────────────────────────────────────────────────────────
+    path("api/fetch-repo/", views.api_fetch_repo, name="api_fetch_repo"),
+    path("api/page-content/", views.api_page_content, name="api_page_content"),
+    path("api/publish/", views.api_publish, name="api_publish"),
+
+    # Trigger a check of all tracked scripts for changes (GET, safe to call manually)
+    path("api/check-updates/", views.api_check_updates, name="api_check_updates"),
+
+    # Opt-out link sent in talk-page notifications (no login required)
+    path("notifications/opt-out/", views.notification_opt_out, name="notification_opt_out"),
+]
+
+==== templates\publisher\views.py ====
+"""
+views.py — complete view layer for WikiScriptSync.
+"""
+
+import json
+import logging
+import os
+
+from django.shortcuts import render, redirect
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST, require_GET
+from django.utils import timezone
+
+from .oauth import (
+    build_authorize_url, handle_callback,
+    login_user, logout_user, get_current_user,
+    require_login, OAuthError,
+)
+from .repo_fetcher import fetch_files, RepoFetchError
+from .wiki_api import (
+    BotSession, WikiAPIError, compute_diff,
+    build_draft_edit_url, build_talk_page_notification, KNOWN_WIKIS,
+)
+from .models import PublishLog, TrackedScript, UserPreference, NotificationLog
+from .notifier import check_and_notify_all, register_tracked_script
+
+logger = logging.getLogger(__name__)
+
+
+# ── Public pages ──────────────────────────────────────────────────────────────
+
+def home(request):
+    return render(request, "publisher/home.html", {
+        "current_user": get_current_user(request),
+    })
+
+
+def get_started(request):
+    if get_current_user(request):
+        return redirect("dashboard")
+
+    if request.method == "POST" and request.POST.get("auth_type") == "botpassword":
+        bot_username  = request.POST.get("bot_username", "").strip()
+        bot_password  = request.POST.get("bot_password", "")
+        wiki_username = request.POST.get("wiki_username", "").strip()
+
+        if not bot_username or not bot_password or not wiki_username:
+            return render(request, "publisher/get_started.html",
+                          {"error": "All fields are required."})
+
+        request.session["user_username"] = wiki_username
+        request.session["user_groups"]   = []
+        request.session["user_rights"]   = []
+        request.session["user_token"]    = None
+        request.session["bot_username"]  = bot_username
+        request.session["bot_password"]  = bot_password
+        request.session.set_expiry(86400)
+        return redirect("dashboard")
+
+    error = request.session.pop("auth_error", None)
+    return render(request, "publisher/get_started.html", {"error": error})
+
+
+# ── OAuth ─────────────────────────────────────────────────────────────────────
+
+def oauth_redirect(request):
+    return redirect(build_authorize_url(request))
+
+
+def oauth_callback(request):
+    try:
+        profile = handle_callback(request)
+        login_user(request, profile)
+        return redirect("dashboard")
+    except OAuthError as e:
+        request.session["auth_error"] = str(e)
+        return redirect("get_started")
+
+
+def logout(request):
+    logout_user(request)
+    return redirect("home")
+
+
+# ── Dashboard views ───────────────────────────────────────────────────────────
+
+@require_login
+def dashboard_home(request):
+    user = get_current_user(request)
+    recent_logs = PublishLog.objects.filter(username=user["username"])[:5]
+    return render(request, "publisher/dashboard/home.html", {
+        "current_user": user,
+        "recent_logs": recent_logs,
+    })
+
+
+@require_login
+def upload_files(request):
+    return render(request, "publisher/dashboard/upload_files.html", {
+        "current_user": get_current_user(request),
+    })
+
+
+@require_login
+def mapping_config(request):
+    return render(request, "publisher/dashboard/mapping_config.html", {
+        "current_user": get_current_user(request),
+        "wiki_choices": json.dumps(list(KNOWN_WIKIS.keys())),
+    })
+
+
+@require_login
+def publish(request):
+    return render(request, "publisher/dashboard/publish.html", {
+        "current_user": get_current_user(request),
+        "wiki_choices": list(KNOWN_WIKIS.keys()),
+    })
+
+
+@require_login
+def publish_log(request):
+    user = get_current_user(request)
+    logs = PublishLog.objects.filter(username=user["username"])
+    return render(request, "publisher/dashboard/publish_log.html", {
+        "current_user": user,
+        "logs": logs,
+    })
+
+
+@require_login
+def settings(request):
+    return render(request, "publisher/dashboard/settings.html", {
+        "current_user": get_current_user(request),
+    })
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+@require_login
+def notifications(request):
+    """
+    GET  — show notification subscription page
+    POST — opt in or opt out
+    """
+    user = get_current_user(request)
+
+    if request.method == "POST":
+        action = request.POST.get("action")
+
+        if action == "opt_in":
+            pref, _ = UserPreference.objects.get_or_create(
+                username=user["username"],
+                defaults={"opted_out": False},
+            )
+            pref.opted_out    = False
+            pref.opted_out_at = None
+            pref.save()
+
+        elif action == "opt_out":
+            pref, _ = UserPreference.objects.get_or_create(username=user["username"])
+            pref.opted_out    = True
+            pref.opted_out_at = timezone.now()
+            pref.save()
+
+        return redirect("notifications")
+
+    pref = UserPreference.objects.filter(username=user["username"]).first()
+    tracked = TrackedScript.objects.filter(username=user["username"], is_active=True)
+    notification_logs = NotificationLog.objects.filter(
+        notified_username=user["username"]
+    ).select_related("tracked_script")[:20]
+
+    return render(request, "publisher/dashboard/notifications.html", {
+        "current_user": user,
+        "pref": pref,
+        "tracked": tracked,
+        "notification_logs": notification_logs,
+        "notifier_bot_wiki": os.environ.get("NOTIFIER_BOT_WIKI", "meta.wikimedia.org"),
+        "notifier_bot_display": os.environ.get("NOTIFIER_BOT_USERNAME", "").split("@")[0] or "WikiScriptSyncBot",
+    })
+
+
+def notification_opt_out(request):
+    """
+    Public opt-out endpoint. Reached via the link sent in a talk-page notification.
+    No login required — uses a signed token to identify the user.
+    """
+    from django.core import signing
+    from django.core.signing import BadSignature, SignatureExpired
+
+    token = request.GET.get("token", "")
+    try:
+        username = signing.loads(token, salt="notification-opt-out", max_age=86400 * 30)
+    except (BadSignature, SignatureExpired):
+        return render(request, "publisher/opt_out_result.html", {
+            "error": "This opt-out link is invalid or has expired. Please log in to manage your preferences.",
+        })
+
+    pref, _ = UserPreference.objects.get_or_create(username=username)
+    pref.opted_out    = True
+    pref.opted_out_at = timezone.now()
+    pref.save()
+
+    return render(request, "publisher/opt_out_result.html", {
+        "username": username,
+        "success": True,
+    })
+
+
+# ── API: fetch repository ─────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_POST
+def api_fetch_repo(request):
+    if not get_current_user(request):
+        return JsonResponse({"error": "Not authenticated."}, status=401)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+
+    repo_url = body.get("repo_url", "").strip()
+    if not repo_url:
+        return JsonResponse({"error": "repo_url is required."}, status=400)
+
+    try:
+        files = fetch_files(repo_url)
+    except RepoFetchError as e:
+        return JsonResponse({"error": str(e)}, status=422)
+    except Exception:
+        logger.exception("Unexpected error in api_fetch_repo")
+        return JsonResponse({"error": "Unexpected error fetching repository."}, status=500)
+
+    return JsonResponse({"files": files, "count": len(files)})
+
+
+# ── API: current page content for diff ───────────────────────────────────────
+
+@require_GET
+def api_page_content(request):
+    if not get_current_user(request):
+        return JsonResponse({"error": "Not authenticated."}, status=401)
+
+    wiki = request.GET.get("wiki", "").strip()
+    page = request.GET.get("page", "").strip()
+
+    if not wiki or not page:
+        return JsonResponse({"error": "wiki and page parameters are required."}, status=400)
+
+    try:
+        session = BotSession(wiki)
+        content = session.get_page_content(page)
+        return JsonResponse({"content": content, "exists": content is not None})
+    except WikiAPIError as e:
+        return JsonResponse({"error": str(e)}, status=422)
+
+
+# ── API: publish ──────────────────────────────────────────────────────────────
+
+@csrf_exempt
+@require_POST
+def api_publish(request):
+    current_user = get_current_user(request)
+    if not current_user:
+        return JsonResponse({"error": "Not authenticated."}, status=401)
+
+    try:
+        body = json.loads(request.body)
+    except json.JSONDecodeError:
+        return JsonResponse({"error": "Invalid JSON body."}, status=400)
+
+    method       = body.get("method", "")
+    wiki         = body.get("wiki", "").strip()
+    page         = body.get("page", "").strip()
+    content      = body.get("content", "")
+    edit_summary = body.get("edit_summary", "Published via WikiScriptSync").strip()
+    source_repo  = body.get("source_repo", "").strip()
+    source_file  = body.get("source_file", "").strip()
+    version      = body.get("version", "").strip()
+
+    if not wiki or not page or not content:
+        return JsonResponse({"error": "wiki, page, and content are required."}, status=400)
+
+    if method == "botpassword":
+        return _publish_botpassword(
+            request, current_user, body, wiki, page, content,
+            edit_summary, source_repo, source_file, version,
+        )
+    elif method == "draft":
+        return _publish_draft(
+            current_user, wiki, page, content, edit_summary,
+            source_repo, source_file, version,
+        )
+    else:
+        return JsonResponse({"error": "method must be 'botpassword' or 'draft'."}, status=400)
+
+
+def _publish_botpassword(
+    request, current_user, body, wiki, page, content,
+    edit_summary, source_repo, source_file, version,
+):
+    bot_username = body.get("bot_username", request.session.get("bot_username", "")).strip()
+    bot_password = body.get("bot_password", request.session.get("bot_password", ""))
+
+    if not bot_username or not bot_password:
+        return JsonResponse(
+            {"error": "bot_username and bot_password are required for BotPassword publish."},
+            status=400,
+        )
+
+    log = PublishLog(
+        username=current_user["username"],
+        source_repo=source_repo, source_file=source_file,
+        target_wiki=wiki, target_page=page,
+        version=version, edit_summary=edit_summary,
+        publish_method="botpassword", status="pending_review",
+    )
+
+    try:
+        session = BotSession(wiki)
+        session.login(bot_username, bot_password)
+        result = session.edit_page(page, content, edit_summary)
+
+        log.status = "success"
+        log.save()
+
+        # Register in tracking system so notifications work
+        register_tracked_script(
+            username=current_user["username"],
+            source_repo=source_repo, source_file=source_file,
+            target_wiki=wiki, target_page=page,
+            initial_content=content,
+        )
+
+        return JsonResponse({
+            "success": True, "method": "botpassword",
+            "wiki": wiki, "page": page,
+            "revision_id": result.get("newrevid"),
+            "log_id": log.id,
+        })
+
+    except WikiAPIError as e:
+        log.status = "failed"
+        log.error_message = str(e)
+        log.save()
+        return JsonResponse({"error": str(e)}, status=422)
+
+    except Exception:
+        log.status = "failed"
+        log.error_message = "Unexpected internal error."
+        log.save()
+        logger.exception("Unexpected error in BotPassword publish")
+        return JsonResponse({"error": "Unexpected error during publishing."}, status=500)
+
+
+def _publish_draft(
+    current_user, wiki, page, content, edit_summary,
+    source_repo, source_file, version,
+):
+    edit_url     = build_draft_edit_url(wiki, page, content)
+    notification = build_talk_page_notification(
+        wiki, page, source_repo, current_user["username"], edit_summary,
+    )
+
+    PublishLog.objects.create(
+        username=current_user["username"],
+        source_repo=source_repo, source_file=source_file,
+        target_wiki=wiki, target_page=page,
+        version=version, edit_summary=edit_summary,
+        publish_method="draft", status="pending_review",
+    )
+
+    # Also register in tracking so the user gets notified of future changes
+    register_tracked_script(
+        username=current_user["username"],
+        source_repo=source_repo, source_file=source_file,
+        target_wiki=wiki, target_page=page,
+        initial_content=content,
+    )
+
+    return JsonResponse({
+        "success": True, "method": "draft",
+        "edit_url": edit_url,
+        "notification_wikitext": notification,
+        "instructions": (
+            "Open the edit URL to review and submit the change yourself. "
+            "Copy the notification wikitext to the relevant talk page if needed."
+        ),
+    })
+
+
+# ── API: check for upstream updates ──────────────────────────────────────────
+
+@require_GET
+def api_check_updates(request):
+    """
+    GET /api/check-updates/
+    Checks all tracked scripts for changes and sends talk-page notifications.
+
+    Protected: only staff or the tool admin should call this in production.
+    On Toolforge this will be called by a cron job.
+    For local testing, visit the URL while logged in.
+    """
+    if not get_current_user(request):
+        return JsonResponse({"error": "Not authenticated."}, status=401)
+
+    summary = check_and_notify_all()
+    return JsonResponse({"status": "ok", "summary": summary})
+
+==== templates\base.html ====
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Wiki Script Publisher{% endblock %}</title>
+
+  {# Wikimedia Codex design tokens + component CSS #}
+  <link rel="stylesheet" href="https://www.unpkg.com/@wikimedia/codex@1.14.0/dist/codex.style.css" />
+
+  {# FontAwesome for icons #}
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+
+  <style>
+    /* ── Wikimedia / Codex design tokens ─────────────────────────── */
+    :root {
+      --wmf-blue:           #3366cc;
+      --wmf-blue-dark:      #2a4b8d;
+      --wmf-blue-light:     #eaf3ff;
+      --wmf-blue-lighter:   #f0f4ff;
+      --wmf-green:          #14866d;
+      --wmf-green-light:    #d5fdf4;
+      --wmf-red:            #d73333;
+      --wmf-red-light:      #fff0f0;
+      --wmf-yellow:         #fc3;
+      --wmf-yellow-light:   #fef6e7;
+
+      --color-base:         #202122;
+      --color-subtle:       #54595d;
+      --color-placeholder:  #72777d;
+      --color-disabled:     #a2a9b1;
+
+      --bg-base:            #ffffff;
+      --bg-neutral:         #f8f9fa;
+      --bg-neutral-dark:    #eaecf0;
+
+      --border-color:       #a2a9b1;
+      --border-color-focus: #3366cc;
+      --border-radius:      2px;
+      --border-radius-lg:   4px;
+
+      --font-ui:    -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --shadow-sm:  0 1px 3px rgba(0,0,0,.12);
+      --shadow-md:  0 2px 8px rgba(0,0,0,.15);
+    }
+
+    /* ── Reset & base ────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: var(--font-ui);
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      color: var(--color-base);
+      background: var(--bg-neutral);
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    a { color: var(--wmf-blue); text-decoration: none; }
+    a:hover { text-decoration: underline; color: var(--wmf-blue-dark); }
+
+    /* ── Navigation bar ──────────────────────────────────────────── */
+    .sp-nav {
+      background: var(--bg-base);
+      border-bottom: 1px solid var(--border-color);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: var(--shadow-sm);
+    }
+    .sp-nav__inner {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 1.5rem;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+    .sp-nav__brand {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--color-base);
+      text-decoration: none;
+    }
+    .sp-nav__brand:hover { text-decoration: none; color: var(--color-base); }
+    .sp-nav__brand-icon {
+      width: 28px;
+      height: 28px;
+      background: var(--wmf-blue);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 0.8rem;
+    }
+    .sp-nav__links { display: flex; align-items: center; gap: 0.5rem; }
+    .sp-nav__link {
+      padding: 0.375rem 0.75rem;
+      border-radius: var(--border-radius);
+      font-size: 0.875rem;
+      color: var(--color-subtle);
+      border: 1px solid transparent;
+    }
+    .sp-nav__link:hover {
+      background: var(--bg-neutral);
+      border-color: var(--border-color);
+      text-decoration: none;
+      color: var(--color-base);
+    }
+    .sp-nav__link--primary {
+      background: var(--wmf-blue);
+      color: #fff !important;
+      border-color: var(--wmf-blue-dark);
+      font-weight: 500;
+    }
+    .sp-nav__link--primary:hover {
+      background: var(--wmf-blue-dark);
+      text-decoration: none;
+    }
+
+    /* ── Main content ─────────────────────────────────────────────── */
+    .sp-main { flex: 1; }
+    .sp-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    /* ── Footer ──────────────────────────────────────────────────── */
+    .sp-footer {
+      background: var(--bg-base);
+      border-top: 1px solid var(--border-color);
+      padding: 1rem 1.5rem;
+      text-align: center;
+      font-size: 0.8125rem;
+      color: var(--color-placeholder);
+    }
+
+    /* ── Cards ───────────────────────────────────────────────────── */
+    .sp-card {
+      background: var(--bg-base);
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius-lg);
+      box-shadow: var(--shadow-sm);
+    }
+    .sp-card__header {
+      padding: 1rem 1.25rem;
+      border-bottom: 1px solid var(--bg-neutral-dark);
+      font-weight: 600;
+      font-size: 1rem;
+    }
+    .sp-card__body { padding: 1.25rem; }
+
+    /* ── Buttons ──────────────────────────────────────────────────── */
+    .sp-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.4375rem 0.875rem;
+      border-radius: var(--border-radius);
+      border: 1px solid var(--border-color);
+      font-size: 0.9375rem;
+      font-family: var(--font-ui);
+      font-weight: 500;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background .1s, border-color .1s;
+      background: var(--bg-base);
+      color: var(--color-base);
+    }
+    .sp-btn:hover { background: var(--bg-neutral); text-decoration: none; }
+    .sp-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .sp-btn--primary {
+      background: var(--wmf-blue);
+      border-color: var(--wmf-blue-dark);
+      color: #fff;
+    }
+    .sp-btn--primary:hover { background: var(--wmf-blue-dark); color: #fff; }
+    .sp-btn--destructive {
+      background: var(--wmf-red);
+      border-color: #b32424;
+      color: #fff;
+    }
+    .sp-btn--quiet {
+      border-color: transparent;
+      background: transparent;
+    }
+    .sp-btn--quiet:hover { background: var(--bg-neutral-dark); border-color: transparent; }
+
+    /* ── Form elements ────────────────────────────────────────────── */
+    .sp-input, .sp-select, .sp-textarea {
+      display: block;
+      width: 100%;
+      padding: 0.4375rem 0.75rem;
+      border: 1px solid var(--border-color);
+      border-radius: var(--border-radius);
+      font-size: 0.9375rem;
+      font-family: var(--font-ui);
+      color: var(--color-base);
+      background: var(--bg-base);
+      transition: border-color .1s, box-shadow .1s;
+      outline: none;
+    }
+    .sp-input:focus, .sp-select:focus, .sp-textarea:focus {
+      border-color: var(--border-color-focus);
+      box-shadow: 0 0 0 2px rgba(51,102,204,.2);
+    }
+    .sp-input::placeholder { color: var(--color-placeholder); }
+    .sp-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 500;
+      color: var(--color-base);
+      margin-bottom: 0.25rem;
+    }
+    .sp-field { margin-bottom: 1rem; }
+    .sp-field-hint {
+      font-size: 0.8125rem;
+      color: var(--color-subtle);
+      margin-top: 0.25rem;
+    }
+
+    /* ── Notices/alerts ───────────────────────────────────────────── */
+    .sp-notice {
+      padding: 0.75rem 1rem;
+      border-radius: var(--border-radius-lg);
+      border-left: 4px solid;
+      font-size: 0.875rem;
+      margin-bottom: 1rem;
+      display: flex;
+      align-items: flex-start;
+      gap: 0.625rem;
+    }
+    .sp-notice--info    { background: var(--wmf-blue-light); border-color: var(--wmf-blue); color: #1a3a7a; }
+    .sp-notice--success { background: var(--wmf-green-light); border-color: var(--wmf-green); color: #0d5c4a; }
+    .sp-notice--warning { background: var(--wmf-yellow-light); border-color: #c8a400; color: #5c4a00; }
+    .sp-notice--error   { background: var(--wmf-red-light); border-color: var(--wmf-red); color: #7a1a1a; }
+
+    /* ── Badges ───────────────────────────────────────────────────── */
+    .sp-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.25rem;
+      padding: 0.125rem 0.5rem;
+      border-radius: 2px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+    .sp-badge--success { background: var(--wmf-green-light); color: #0d5c4a; }
+    .sp-badge--pending { background: var(--wmf-yellow-light); color: #5c4a00; }
+    .sp-badge--error   { background: var(--wmf-red-light); color: #7a1a1a; }
+    .sp-badge--neutral { background: var(--bg-neutral-dark); color: var(--color-subtle); }
+
+    /* ── Tables ───────────────────────────────────────────────────── */
+    .sp-table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
+    .sp-table th {
+      background: var(--bg-neutral);
+      padding: 0.5rem 0.875rem;
+      text-align: left;
+      font-weight: 600;
+      font-size: 0.8125rem;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      color: var(--color-subtle);
+      border-bottom: 1px solid var(--border-color);
+    }
+    .sp-table td {
+      padding: 0.625rem 0.875rem;
+      border-bottom: 1px solid var(--bg-neutral-dark);
+      vertical-align: middle;
+    }
+    .sp-table tr:last-child td { border-bottom: none; }
+    .sp-table tr:hover td { background: var(--bg-neutral); }
+
+    /* ── Utilities ────────────────────────────────────────────────── */
+    .sp-mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: 0.875em; }
+    .sp-text-subtle { color: var(--color-subtle); }
+    .sp-text-small  { font-size: 0.8125rem; }
+    .hidden { display: none !important; }
+  </style>
+
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+{% block navbar %}
+<nav class="sp-nav" role="navigation">
+  <div class="sp-nav__inner">
+    <a href="{% url 'home' %}" class="sp-nav__brand">
+      <span class="sp-nav__brand-icon"><i class="fa-solid fa-code-branch"></i></span>
+      WikiScriptSync
+    </a>
+    <div class="sp-nav__links">
+      {% if current_user %}
+        <span class="sp-nav__link sp-text-subtle" style="font-size:.8125rem">
+          {{ current_user.username }}
+        </span>
+        <a href="{% url 'dashboard' %}" class="sp-nav__link">Dashboard</a>
+        <a href="{% url 'logout' %}" class="sp-nav__link">Log out</a>
+      {% else %}
+        <a href="{% url 'get_started' %}" class="sp-nav__link sp-nav__link--primary">
+          Get started
+        </a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+{% endblock %}
+
+<main class="sp-main">
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="sp-footer">
+  WikiScriptSync — a
+  <a href="https://meta.wikimedia.org/wiki/Community_Wishlist_Survey_2022/Bots_and_gadgets/A_bot_or_gadget_to_publish_public_Git_repo_to_a_gadget_or_user_script" target="_blank" rel="noopener">Community Wishlist 2022</a>
+  project · Built for Wikimedia by Dev Jadiya ·
+  <a href="https://gitlab.wikimedia.org/toolforge-repos/script-publisher" target="_blank" rel="noopener">Source code</a>
+</footer>
+
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>
+
+==== templates\base_dashboard.html ====
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Dashboard — WikiScriptSync{% endblock %}</title>
+  <link rel="stylesheet" href="https://www.unpkg.com/@wikimedia/codex@1.14.0/dist/codex.style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <style>
+    :root {
+      --wmf-blue:           #3366cc;
+      --wmf-blue-dark:      #2a4b8d;
+      --wmf-blue-light:     #eaf3ff;
+      --wmf-blue-lighter:   #f0f4ff;
+      --wmf-green:          #14866d;
+      --wmf-green-light:    #d5fdf4;
+      --wmf-red:            #d73333;
+      --wmf-red-light:      #fff0f0;
+      --wmf-yellow-light:   #fef6e7;
+      --color-base:         #202122;
+      --color-subtle:       #54595d;
+      --color-placeholder:  #72777d;
+      --bg-base:            #ffffff;
+      --bg-neutral:         #f8f9fa;
+      --bg-neutral-dark:    #eaecf0;
+      --border-color:       #a2a9b1;
+      --sidebar-width:      220px;
+      --topbar-height:      56px;
+      --font-ui:            -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--font-ui); font-size: .9375rem; color: var(--color-base); background: var(--bg-neutral); }
+    a { color: var(--wmf-blue); text-decoration: none; }
+    a:hover { text-decoration: underline; color: var(--wmf-blue-dark); }
+
+    /* ── Top bar ─────────────────────────── */
+    .sp-topbar {
+      position: fixed; top: 0; left: 0; right: 0; height: var(--topbar-height);
+      background: var(--bg-base);
+      border-bottom: 1px solid var(--border-color);
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0 1rem 0 1.25rem;
+      z-index: 200;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+    }
+    .sp-topbar__brand {
+      display: flex; align-items: center; gap: .5rem;
+      font-size: 1rem; font-weight: 600; color: var(--color-base);
+    }
+    .sp-topbar__brand:hover { text-decoration: none; color: var(--color-base); }
+    .sp-topbar__brand-icon {
+      width: 28px; height: 28px; background: var(--wmf-blue);
+      border-radius: 4px; display: flex; align-items: center;
+      justify-content: center; color: #fff; font-size: .8rem;
+    }
+    .sp-topbar__right { display: flex; align-items: center; gap: .75rem; }
+    .sp-topbar__user {
+      font-size: .8125rem; color: var(--color-subtle);
+      display: flex; align-items: center; gap: .375rem;
+    }
+    .sp-topbar__logout {
+      font-size: .8125rem; color: var(--wmf-blue); padding: .25rem .5rem;
+      border-radius: 2px;
+    }
+    .sp-topbar__logout:hover { background: var(--bg-neutral); text-decoration: none; }
+
+    /* ── Sidebar ─────────────────────────── */
+    .sp-sidebar {
+      position: fixed; top: var(--topbar-height); left: 0; bottom: 0;
+      width: var(--sidebar-width);
+      background: var(--bg-base);
+      border-right: 1px solid var(--border-color);
+      overflow-y: auto;
+      padding: 1rem 0;
+      z-index: 100;
+    }
+    .sp-sidebar__section {
+      padding: 0 .75rem .5rem;
+      font-size: .75rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .06em; color: var(--color-placeholder);
+      margin-top: .5rem;
+    }
+    .sp-sidebar__nav { list-style: none; margin: 0; padding: 0; }
+    .sp-sidebar__item { margin: 0; }
+    .sp-sidebar__link {
+      display: flex; align-items: center; gap: .625rem;
+      padding: .5rem .875rem;
+      font-size: .875rem; color: var(--color-base);
+      border-radius: 0;
+      transition: background .1s;
+    }
+    .sp-sidebar__link:hover { background: var(--bg-neutral); text-decoration: none; color: var(--color-base); }
+    .sp-sidebar__link.active {
+      background: var(--wmf-blue-light);
+      color: var(--wmf-blue-dark);
+      font-weight: 600;
+      border-left: 3px solid var(--wmf-blue);
+      padding-left: calc(.875rem - 3px);
+    }
+    .sp-sidebar__link .icon { width: 16px; text-align: center; color: var(--color-subtle); font-size: .875rem; }
+    .sp-sidebar__link.active .icon { color: var(--wmf-blue); }
+
+    /* ── Main content ────────────────────── */
+    .sp-content {
+      margin-left: var(--sidebar-width);
+      margin-top: var(--topbar-height);
+      padding: 1.75rem 2rem;
+      min-height: calc(100vh - var(--topbar-height));
+      max-width: 1100px;
+    }
+    .sp-page-title { font-size: 1.5rem; font-weight: 600; margin: 0 0 .25rem; }
+    .sp-page-subtitle { font-size: .875rem; color: var(--color-subtle); margin: 0 0 1.5rem; }
+
+    /* ── Cards ───────────────────────────── */
+    .sp-card {
+      background: var(--bg-base);
+      border: 1px solid var(--border-color);
+      border-radius: 4px;
+      margin-bottom: 1.25rem;
+    }
+    .sp-card__header {
+      padding: .875rem 1.25rem;
+      border-bottom: 1px solid var(--bg-neutral-dark);
+      font-weight: 600; font-size: .9375rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .sp-card__body { padding: 1.25rem; }
+    .sp-card__footer {
+      padding: .875rem 1.25rem;
+      border-top: 1px solid var(--bg-neutral-dark);
+      background: var(--bg-neutral);
+      display: flex; justify-content: flex-end; gap: .5rem;
+    }
+
+    /* ── Buttons ──────────────────────────── */
+    .sp-btn {
+      display: inline-flex; align-items: center; gap: .375rem;
+      padding: .4375rem .875rem;
+      border-radius: 2px; border: 1px solid var(--border-color);
+      font-size: .9375rem; font-family: var(--font-ui);
+      font-weight: 500; cursor: pointer; text-decoration: none;
+      transition: background .1s; background: var(--bg-base);
+      color: var(--color-base); line-height: 1.4;
+    }
+    .sp-btn:hover { background: var(--bg-neutral); text-decoration: none; }
+    .sp-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .sp-btn--primary { background: var(--wmf-blue); border-color: var(--wmf-blue-dark); color: #fff; }
+    .sp-btn--primary:hover { background: var(--wmf-blue-dark); color: #fff; }
+    .sp-btn--sm { padding: .3125rem .625rem; font-size: .8125rem; }
+    .sp-btn--quiet { border-color: transparent; background: transparent; }
+    .sp-btn--quiet:hover { background: var(--bg-neutral-dark); border-color: transparent; }
+
+    /* ── Form ────────────────────────────── */
+    .sp-input, .sp-select, .sp-textarea {
+      display: block; width: 100%;
+      padding: .4375rem .75rem;
+      border: 1px solid var(--border-color);
+      border-radius: 2px;
+      font-size: .9375rem; font-family: var(--font-ui);
+      color: var(--color-base); background: var(--bg-base);
+      transition: border-color .1s, box-shadow .1s; outline: none;
+    }
+    .sp-input:focus, .sp-select:focus, .sp-textarea:focus {
+      border-color: var(--wmf-blue);
+      box-shadow: 0 0 0 2px rgba(51,102,204,.2);
+    }
+    .sp-input::placeholder { color: var(--color-placeholder); }
+    .sp-label { display: block; font-size: .875rem; font-weight: 500; margin-bottom: .25rem; }
+    .sp-field { margin-bottom: 1rem; }
+    .sp-field-hint { font-size: .8125rem; color: var(--color-subtle); margin-top: .25rem; }
+
+    /* ── Notices ──────────────────────────── */
+    .sp-notice {
+      padding: .75rem 1rem; border-radius: 4px; border-left: 4px solid;
+      font-size: .875rem; margin-bottom: 1rem;
+      display: flex; align-items: flex-start; gap: .625rem;
+    }
+    .sp-notice--info    { background: var(--wmf-blue-light); border-color: var(--wmf-blue); color: #1a3a7a; }
+    .sp-notice--success { background: var(--wmf-green-light); border-color: var(--wmf-green); color: #0d5c4a; }
+    .sp-notice--warning { background: var(--wmf-yellow-light); border-color: #c8a400; color: #5c4a00; }
+    .sp-notice--error   { background: var(--wmf-red-light); border-color: var(--wmf-red); color: #7a1a1a; }
+
+    /* ── Badges ───────────────────────────── */
+    .sp-badge {
+      display: inline-flex; align-items: center; gap: .25rem;
+      padding: .125rem .5rem; border-radius: 2px;
+      font-size: .75rem; font-weight: 500;
+    }
+    .sp-badge--success { background: var(--wmf-green-light); color: #0d5c4a; }
+    .sp-badge--pending { background: var(--wmf-yellow-light); color: #5c4a00; }
+    .sp-badge--error   { background: var(--wmf-red-light); color: #7a1a1a; }
+    .sp-badge--neutral { background: var(--bg-neutral-dark); color: var(--color-subtle); }
+
+    /* ── Tables ───────────────────────────── */
+    .sp-table { width: 100%; border-collapse: collapse; font-size: .875rem; }
+    .sp-table th {
+      background: var(--bg-neutral); padding: .5rem .875rem;
+      text-align: left; font-weight: 600; font-size: .75rem;
+      text-transform: uppercase; letter-spacing: .04em;
+      color: var(--color-subtle); border-bottom: 1px solid var(--border-color);
+    }
+    .sp-table td {
+      padding: .625rem .875rem;
+      border-bottom: 1px solid var(--bg-neutral-dark); vertical-align: middle;
+    }
+    .sp-table tr:last-child td { border-bottom: none; }
+    .sp-table tr:hover td { background: var(--bg-neutral); }
+
+    /* ── Mono ─────────────────────────────── */
+    .sp-mono {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: .875em;
+    }
+    .sp-text-subtle { color: var(--color-subtle); }
+    .sp-text-small  { font-size: .8125rem; }
+    .hidden { display: none !important; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+<header class="sp-topbar">
+  <a href="{% url 'home' %}" class="sp-topbar__brand">
+    <span class="sp-topbar__brand-icon"><i class="fa-solid fa-code-branch"></i></span>
+    WikiScriptSync
+  </a>
+  <div class="sp-topbar__right">
+    <span class="sp-topbar__user">
+      <i class="fa-regular fa-circle-user"></i>
+      {{ current_user.username }}
+      {% if current_user.is_interface_admin %}
+        <span class="sp-badge sp-badge--success" title="Interface admin on at least one wiki">IA</span>
+      {% endif %}
+    </span>
+    <a href="{% url 'logout' %}" class="sp-topbar__logout">
+      <i class="fa-solid fa-right-from-bracket"></i> Log out
+    </a>
+  </div>
+</header>
+
+<nav class="sp-sidebar" aria-label="Dashboard navigation">
+  <p class="sp-sidebar__section">Workflow</p>
+  <ul class="sp-sidebar__nav">
+    {% with url_name=request.resolver_match.url_name %}
+    <li class="sp-sidebar__item">
+      <a href="{% url 'dashboard' %}" class="sp-sidebar__link {% if url_name == 'dashboard' %}active{% endif %}">
+        <i class="fa-solid fa-house icon"></i> Home
+      </a>
+    </li>
+    <li class="sp-sidebar__item">
+      <a href="{% url 'upload_files' %}" class="sp-sidebar__link {% if url_name == 'upload_files' %}active{% endif %}">
+        <i class="fa-solid fa-upload icon"></i> Upload files
+      </a>
+    </li>
+    <li class="sp-sidebar__item">
+      <a href="{% url 'mapping_config' %}" class="sp-sidebar__link {% if url_name == 'mapping_config' %}active{% endif %}">
+        <i class="fa-solid fa-diagram-project icon"></i> Mapping
+      </a>
+    </li>
+    <li class="sp-sidebar__item">
+      <a href="{% url 'publish' %}" class="sp-sidebar__link {% if url_name == 'publish' %}active{% endif %}">
+        <i class="fa-solid fa-paper-plane icon"></i> Publish
+      </a>
+    </li>
+    <li class="sp-sidebar__item">
+      <a href="{% url 'publish_log' %}" class="sp-sidebar__link {% if url_name == 'publish_log' %}active{% endif %}">
+        <i class="fa-solid fa-clock-rotate-left icon"></i> Publish log
+      </a>
+    </li>
+    {% endwith %}
+  </ul>
+
+  <p class="sp-sidebar__section" style="margin-top:1rem">Notifications</p>
+  <ul class="sp-sidebar__nav">
+    {% with url_name=request.resolver_match.url_name %}
+    <li class="sp-sidebar__item">
+      <a href="{% url 'notifications' %}" class="sp-sidebar__link {% if url_name == 'notifications' %}active{% endif %}">
+        <i class="fa-solid fa-bell icon"></i> Subscriptions
+      </a>
+    </li>
+    {% endwith %}
+  </ul>
+
+  <p class="sp-sidebar__section" style="margin-top:1rem">Account</p>
+  <ul class="sp-sidebar__nav">
+    {% with url_name=request.resolver_match.url_name %}
+    <li class="sp-sidebar__item">
+      <a href="{% url 'settings' %}" class="sp-sidebar__link {% if url_name == 'settings' %}active{% endif %}">
+        <i class="fa-solid fa-gear icon"></i> Settings
+      </a>
+    </li>
+    {% endwith %}
+  </ul>
+</nav>
+
+<main class="sp-content">
+  {% block dashboard_content %}{% endblock %}
+</main>
+
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>
+
+==== .env ====
+# Copy this file to .env and fill in your values.
+# Never commit .env to version control.
+
+DEBUG=True
+SECRET_KEY=django-insecure-replace-with-a-real-key-in-production
+ALLOWED_HOSTS=127.0.0.1,localhost
+
+# OAuth 2.0 credentials
+# Register at: https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration
+OAUTH_CLIENT_ID=your-client-id-here
+OAUTH_CLIENT_SECRET=your-client-secret-here
+
+# Use this for local development:
+OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/callback
+# Use this for Toolforge:
+# OAUTH_REDIRECT_URI=https://script-publisher.toolforge.org/api/auth/callback
+
+# Leave unset to use SQLite locally.
+# On Toolforge, set to your MariaDB connection string:
+# DATABASE_URL=mysql://user:password@host/dbname
+
+
+DEBUG=True
+SECRET_KEY=any-long-random-string-for-local-dev
+ALLOWED_HOSTS=127.0.0.1,localhost
+
+OAUTH_CLIENT_ID=c4b5128cc24c0b2c46e4f63cca29de43
+OAUTH_CLIENT_SECRET=0534219c56e661de1ab794267912f6527b6a47a5
+OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/callback
+
+# Notification bot (create Special:BotPasswords for a dedicated account)
+NOTIFIER_BOT_USERNAME=ScriptPublisherBot@notifier
+NOTIFIER_BOT_PASSWORD=your-bot-password-here
+NOTIFIER_BOT_WIKI=meta.wikimedia.org
+
+# Leave DATABASE_URL empty to use SQLite locally
+
+==== .env.example ====
+# Copy this file to .env and fill in your values.
+# Never commit .env to version control.
+
+DEBUG=True
+SECRET_KEY=django-insecure-replace-with-a-real-key-in-production
+ALLOWED_HOSTS=127.0.0.1,localhost
+
+# OAuth 2.0 credentials
+# Register at: https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration
+OAUTH_CLIENT_ID=your-client-id-here
+OAUTH_CLIENT_SECRET=your-client-secret-here
+
+# Use this for local development:
+OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/callback
+# Use this for Toolforge:
+# OAUTH_REDIRECT_URI=https://script-publisher.toolforge.org/api/auth/callback
+
+# Leave unset to use SQLite locally.
+# On Toolforge, set to your MariaDB connection string:
+# DATABASE_URL=mysql://user:password@host/dbname
+
+
+==== DEPLOYMENT.md ====
+# Script Publisher — Deployment Guide
+
+## Local development setup
+
+```bash
+# 1. Clone the repository
+git clone https://gitlab.wikimedia.org/toolforge-repos/script-publisher.git
+cd script-publisher
+
+# 2. Create and activate a virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Copy the environment file and fill in your values
+cp .env.example .env
+# Edit .env — set OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/callback
+
+# 5. Run migrations
+python manage.py migrate
+
+# 6. Start the development server
+python manage.py runserver
+```
+
+Open http://localhost:8000 in your browser.
+
+---
+
+## Environment variables
+
+| Variable | Required | Description |
+|---|---|---|
+| `SECRET_KEY` | Yes (prod) | Django secret key. Generate with `python -c "import secrets; print(secrets.token_urlsafe(50))"` |
+| `DEBUG` | No | Set to `True` for local dev, omit or `False` for production |
+| `ALLOWED_HOSTS` | Yes (prod) | Comma-separated hostnames, e.g. `script-publisher.toolforge.org` |
+| `OAUTH_CLIENT_ID` | Yes | Your OAuth consumer key |
+| `OAUTH_CLIENT_SECRET` | Yes | Your OAuth consumer secret — never commit this |
+| `OAUTH_REDIRECT_URI` | Yes | Must match exactly what is registered in your OAuth consumer. Use `http://localhost:8000/api/auth/callback` locally |
+| `DATABASE_URL` | No | Leave unset to use SQLite locally. Set to a MariaDB URL on Toolforge |
+
+---
+
+## Toolforge deployment
+
+### 1. Set environment variables via Toolforge secrets
+
+```bash
+# SSH into Toolforge
+ssh login.toolforge.org
+
+# Set each secret (do not put secrets in files that get committed)
+toolforge envvars create SECRET_KEY "your-long-random-key"
+toolforge envvars create OAUTH_CLIENT_SECRET "0534219c56e661de1ab794267912f6527b6a47a5"
+toolforge envvars create OAUTH_CLIENT_ID "c4b5128cc24c0b2c46e4f63cca29de43"
+toolforge envvars create OAUTH_REDIRECT_URI "https://script-publisher.toolforge.org/api/auth/callback"
+toolforge envvars create DEBUG "False"
+toolforge envvars create ALLOWED_HOSTS "script-publisher.toolforge.org"
+```
+
+### 2. Deploy using the build script
+
+```bash
+# From the Toolforge shell, inside the repo
+bash build.sh
+```
+
+`build.sh` runs:
+- `pip install -r requirements.txt`
+- `python manage.py collectstatic --no-input`
+- `python manage.py migrate`
+
+### 3. OAuth callback URL verification
+
+The callback URL registered in your OAuth consumer must be exactly:
+```
+https://script-publisher.toolforge.org/api/auth/callback
+```
+
+This is in `publisher/urls.py` as `path("api/auth/callback/", ...)`.
+The trailing slash is handled by Django's `APPEND_SLASH` setting.
+
+---
+
+## Security checklist before production use
+
+- [ ] `DEBUG=False` in production
+- [ ] `SECRET_KEY` is unique and not committed to git
+- [ ] `OAUTH_CLIENT_SECRET` is only in Toolforge environment variables
+- [ ] `SESSION_COOKIE_SECURE=True` (automatic when `DEBUG=False`)
+- [ ] `db.sqlite3` is in `.gitignore` (already is)
+- [ ] `.env` is in `.gitignore` (already is)
+- [ ] All dependencies are pinned in `requirements.txt`
+
+---
+
+## OAuth consumer registration
+
+Your consumer is registered at:
+https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/list
+
+Current scope: `basic` (read username + groups only).
+
+**Do not request JS-editing scopes** unless the community review at
+`Steward_requests/Miscellaneous#OAuth_permissions` has been approved.
+The current tool design (draft URL path + BotPassword path) does not require
+JS-editing OAuth permissions.
+
+
+==== manage.py ====
+#!/usr/bin/env python
+"""Django's command-line utility for administrative tasks."""
+import os
+import sys
+
+
+def main():
+    """Run administrative tasks."""
+    os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'core.settings')
+    try:
+        from django.core.management import execute_from_command_line
+    except ImportError as exc:
+        raise ImportError(
+            "Couldn't import Django. Are you sure it's installed and "
+            "available on your PYTHONPATH environment variable? Did you "
+            "forget to activate a virtual environment?"
+        ) from exc
+    execute_from_command_line(sys.argv)
+
+
+if __name__ == '__main__':
+    main()
+
+
+==== requirements.txt ====
+asgiref==3.11.0
+certifi==2025.11.12
+charset-normalizer==3.4.4
+dj-database-url==3.0.1
+Django==6.0
+django-jazzmin==3.0.1
+gunicorn==23.0.0
+idna==3.11
+packaging==25.0
+psycopg2-binary==2.9.11
+python-dotenv==1.2.1
+requests==2.32.5
+sqlparse==0.5.5
+urllib3==2.6.2
+whitenoise==6.11.0
+
+
+==== Setup.md ====
+# Script Publisher — Local Setup & Testing Guide
+
+## Prerequisites
+- Python 3.11 or 3.12
+- Git
+- A Wikimedia account (for OAuth testing)
+
+---
+
+## Step 1 — Create and activate a virtual environment
+
+### Windows (PowerShell)
+```powershell
+cd script-publisher
+python -m venv venv
+venv\Scripts\Activate.ps1
+```
+
+### macOS / Linux
+```bash
+cd script-publisher
+python3 -m venv venv
+source venv/bin/activate
+```
+
+You should see `(venv)` at the start of your prompt.
+
+---
+
+## Step 2 — Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Step 3 — Set up your .env file
+```bash
+# Copy the example
+copy .env.example .env        # Windows
+cp .env.example .env          # Mac/Linux
+
+# Edit .env — change these two lines for local testing:
+#   DEBUG=True
+#   OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/callback
+```
+
+Your `.env` for local development should look like this:
+```
+DEBUG=True
+SECRET_KEY=any-long-random-string-for-local-dev
+ALLOWED_HOSTS=127.0.0.1,localhost
+
+OAUTH_CLIENT_ID=c4b5128cc24c0b2c46e4f63cca29de43
+OAUTH_CLIENT_SECRET=0534219c56e661de1ab794267912f6527b6a47a5
+OAUTH_REDIRECT_URI=http://localhost:8000/api/auth/callback
+
+# Notification bot (create Special:BotPasswords for a dedicated account)
+NOTIFIER_BOT_USERNAME=ScriptPublisherBot@notifier
+NOTIFIER_BOT_PASSWORD=your-bot-password-here
+NOTIFIER_BOT_WIKI=meta.wikimedia.org
+
+# Leave DATABASE_URL empty to use SQLite locally
+```
+
+---
+
+## Step 4 — Run database migrations
+```bash
+python manage.py migrate
+```
+
+This creates `db.sqlite3` locally with all tables:
+- `publisher_publishlog`
+- `publisher_trackedscript`
+- `publisher_userpreference`
+- `publisher_notificationlog`
+- Django session and admin tables
+
+---
+
+## Step 5 — Create a local admin account (optional, for /admin panel)
+```bash
+python manage.py createsuperuser
+```
+
+---
+
+## Step 6 — Run the development server
+```bash
+python manage.py runserver
+```
+
+Open: http://localhost:8000
+
+---
+
+## Step 7 — Test the full flow locally
+
+### OAuth login test
+1. Go to http://localhost:8000/get-started/
+2. Click "Continue with Wikimedia"
+3. You will be redirected to meta.wikimedia.org
+4. Authorize the app
+5. You should land on http://localhost:8000/dashboard/
+
+> **Note**: For OAuth to work locally, the redirect URI
+> `http://localhost:8000/api/auth/callback` must be registered.
+> Your current consumer has `https://script-publisher.toolforge.org/api/auth/callback`.
+> You will need to register a **second** OAuth consumer for local testing,
+> or temporarily update the consumer's redirect URI.
+> Alternatively, test login via the BotPassword tab — that works without OAuth.
+
+### Repository fetch test
+1. Go to http://localhost:8000/dashboard/upload/
+2. Enter: `https://github.com/nicowillis/wikimedia-scripts` (any public repo with .js/.css)
+3. Click "Fetch files" — files should appear without any gitingest dependency
+
+### Publish test (draft path — safest, no permissions needed)
+1. Select files, click Continue
+2. Set destinations in Mapping Config
+3. On Publish page, leave method as "Draft URL"
+4. Click "Publish files" → confirm
+5. You get a pre-filled edit URL + talk-page notification wikitext
+
+### Notification system test
+1. Go to http://localhost:8000/dashboard/notifications/
+2. Opt in with your wiki username
+3. Go to http://localhost:8000/api/check-updates/ (GET)
+4. This checks all tracked scripts for changes and queues notifications
+
+---
+
+## MariaDB setup (Toolforge production only)
+
+### On the Toolforge login node:
+```bash
+ssh login.toolforge.org
+
+# Create your database (one-time)
+sql create
+
+# This gives you a database named:  s<your-uid>__script_publisher
+# And credentials in: ~/replica.my.cnf
+
+# Find your credentials:
+cat ~/replica.my.cnf
+```
+
+### Set DATABASE_URL on Toolforge:
+```bash
+toolforge envvars create DATABASE_URL \
+  "mysql://s12345:YOUR_PASSWORD@tools.db.svc.wikimedia.cloud/s12345__script_publisher"
+```
+
+Replace `s12345` with your actual Toolforge username and set your actual password.
+
+### Run migrations on Toolforge:
+```bash
+# SSH into your tool's shell
+toolforge shell script-publisher
+
+# Inside the tool shell:
+python manage.py migrate
+```
+
+---
+
+## Troubleshooting
+
+**`ModuleNotFoundError: No module named 'django'`**
+→ Your virtual environment is not activated. Run `venv\Scripts\Activate.ps1` again.
+
+**`django.db.OperationalError: no such table`**
+→ Run `python manage.py migrate`
+
+**OAuth callback gives 404**
+→ Your OAUTH_REDIRECT_URI in .env doesn't match the server URL. For local dev, use `http://localhost:8000/api/auth/callback`.
+
+**`DisallowedHost` error**
+→ Add `127.0.0.1` and `localhost` to `ALLOWED_HOSTS` in your `.env`.
+

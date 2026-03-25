@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+{% load static %}
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}WikiScriptSync{% endblock %}</title>
+  <link rel="stylesheet" href="https://www.unpkg.com/@wikimedia/codex@1.14.0/dist/codex.style.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <style>
+    :root {
+      --wmf-blue: #3366cc; --wmf-blue-dark: #2a4b8d; --wmf-blue-light: #eaf3ff;
+      --wmf-green: #14866d; --wmf-green-light: #d5fdf4;
+      --wmf-red: #d73333; --wmf-red-light: #fff0f0;
+      --wmf-yellow-light: #fef6e7;
+      --color-base: #202122; --color-subtle: #54595d; --color-placeholder: #72777d;
+      --bg-base: #ffffff; --bg-neutral: #f8f9fa; --bg-neutral-dark: #eaecf0;
+      --border-color: #a2a9b1; --border-color-focus: #3366cc;
+      --font-ui: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --shadow-sm: 0 1px 3px rgba(0,0,0,.12);
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    body { margin: 0; font-family: var(--font-ui); font-size: .9375rem; line-height: 1.6;
+           color: var(--color-base); background: var(--bg-neutral);
+           display: flex; flex-direction: column; min-height: 100vh; }
+    a { color: var(--wmf-blue); text-decoration: none; }
+    a:hover { text-decoration: underline; color: var(--wmf-blue-dark); }
+    .sp-nav { background: var(--bg-base); border-bottom: 1px solid var(--border-color);
+              position: sticky; top: 0; z-index: 100; box-shadow: var(--shadow-sm); }
+    .sp-nav__inner { max-width: 1200px; margin: 0 auto; padding: 0 1.5rem;
+                     height: 56px; display: flex; align-items: center; justify-content: space-between; }
+    .sp-nav__brand { display: flex; align-items: center; gap: .5rem;
+                     font-size: 1.1rem; font-weight: 600; color: var(--color-base); }
+    .sp-nav__brand:hover { text-decoration: none; color: var(--color-base); }
+    .sp-nav__brand-icon { width: 28px; height: 28px; background: var(--wmf-blue);
+                          border-radius: 4px; display: flex; align-items: center;
+                          justify-content: center; color: #fff; font-size: .8rem; }
+    .sp-nav__links { display: flex; align-items: center; gap: .5rem; }
+    .sp-nav__link { padding: .375rem .75rem; border-radius: 2px; font-size: .875rem;
+                    color: var(--color-subtle); border: 1px solid transparent; }
+    .sp-nav__link:hover { background: var(--bg-neutral); border-color: var(--border-color);
+                          text-decoration: none; color: var(--color-base); }
+    .sp-nav__link--primary { background: var(--wmf-blue); color: #fff !important;
+                              border-color: var(--wmf-blue-dark); font-weight: 500; }
+    .sp-nav__link--primary:hover { background: var(--wmf-blue-dark); text-decoration: none; }
+    .sp-main { flex: 1; }
+    .sp-container { max-width: 1200px; margin: 0 auto; padding: 2rem 1.5rem; }
+    .sp-footer { background: var(--bg-base); border-top: 1px solid var(--border-color);
+                 padding: 1rem 1.5rem; text-align: center; font-size: .8125rem; color: var(--color-placeholder); }
+    .sp-card { background: var(--bg-base); border: 1px solid var(--border-color);
+               border-radius: 4px; box-shadow: var(--shadow-sm); }
+    .sp-card__header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--bg-neutral-dark);
+                       font-weight: 600; font-size: 1rem; display: flex; align-items: center; justify-content: space-between; }
+    .sp-card__body { padding: 1.25rem; }
+    .sp-btn { display: inline-flex; align-items: center; gap: .375rem;
+              padding: .4375rem .875rem; border-radius: 2px; border: 1px solid var(--border-color);
+              font-size: .9375rem; font-family: var(--font-ui); font-weight: 500;
+              cursor: pointer; text-decoration: none; background: var(--bg-base); color: var(--color-base); }
+    .sp-btn:hover { background: var(--bg-neutral); text-decoration: none; }
+    .sp-btn--primary { background: var(--wmf-blue); border-color: var(--wmf-blue-dark); color: #fff; }
+    .sp-btn--primary:hover { background: var(--wmf-blue-dark); color: #fff; }
+    .sp-notice { padding: .75rem 1rem; border-radius: 4px; border-left: 4px solid;
+                 font-size: .875rem; margin-bottom: 1rem; display: flex; align-items: flex-start; gap: .625rem; }
+    .sp-notice--info { background: var(--wmf-blue-light); border-color: var(--wmf-blue); color: #1a3a7a; }
+    .sp-mono { font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace; font-size: .875em; }
+    .hidden { display: none !important; }
+  </style>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+{% block navbar %}
+<nav class="sp-nav">
+  <div class="sp-nav__inner">
+    <a href="{% url 'home' %}" class="sp-nav__brand">
+      <span class="sp-nav__brand-icon"><i class="fa-solid fa-code-branch"></i></span>
+      WikiScriptSync
+    </a>
+    <div class="sp-nav__links">
+      {% if current_user %}
+        <span class="sp-nav__link" style="font-size:.8125rem;color:var(--color-subtle);">{{ current_user.username }}</span>
+        <a href="{% url 'dashboard' %}" class="sp-nav__link">Dashboard</a>
+        <a href="{% url 'logout' %}" class="sp-nav__link">Log out</a>
+      {% else %}
+        <a href="{% url 'get_started' %}" class="sp-nav__link sp-nav__link--primary">Get started</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+{% endblock %}
+
+<main class="sp-main">{% block content %}{% endblock %}</main>
+
+<footer class="sp-footer">
+  WikiScriptSync — a
+  <a href="https://meta.wikimedia.org/wiki/Community_Wishlist_Survey_2022/Bots_and_gadgets/A_bot_or_gadget_to_publish_public_Git_repo_to_a_gadget_or_user_script" target="_blank" rel="noopener">Community Wishlist 2022</a>
+  project · Built by Dev Jadiya ·
+  <a href="https://gitlab.wikimedia.org/toolforge-repos/script-publisher" target="_blank" rel="noopener">Source code</a>
+</footer>
+
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

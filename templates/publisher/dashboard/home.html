@@ -1,0 +1,196 @@
+{% extends 'base_dashboard.html' %}
+{% block dashboard_content %}
+<h1 class="sp-page-title">Dashboard</h1>
+<p class="sp-page-subtitle">Welcome, {{ current_user.username }}.</p>
+
+{% if pending_updates %}
+<div class="sp-notice sp-notice--warning" style="margin-bottom:1.25rem;">
+  <i class="fa-solid fa-triangle-exclamation" style="flex-shrink:0;margin-top:.1rem;"></i>
+  <div>
+    <strong>{{ pending_updates }} script{{ pending_updates|pluralize }} updated upstream.</strong>
+    The source repository has changed since your last publish.
+    <a href="{% url 'notifications' %}">View tracked scripts</a> or
+    <a href="{% url 'upload_files' %}">start a new publish</a> to deploy the update.
+  </div>
+</div>
+{% endif %}
+
+{% if not notifications_enabled %}
+<div class="sp-notice sp-notice--info" style="margin-bottom:1.25rem;">
+  <i class="fa-solid fa-bell" style="flex-shrink:0;margin-top:.1rem;"></i>
+  <div>
+    <strong>Enable change notifications</strong> to get a message on your
+    <a href="https://meta.wikimedia.org/wiki/User_talk:{{ current_user.username }}" target="_blank" rel="noopener">
+      meta.wikimedia.org talk page</a>
+    whenever an upstream repository changes.
+    <a href="{% url 'notifications' %}">Enable now →</a>
+  </div>
+</div>
+{% endif %}
+
+{# Stats #}
+<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:1rem;margin-bottom:1.5rem;">
+  <div class="sp-card"><div class="sp-card__body" style="text-align:center;">
+    <p style="margin:0;font-size:2rem;font-weight:700;color:var(--wmf-blue);">{{ tracked_count }}</p>
+    <p style="margin:.25rem 0 0;font-size:.875rem;color:var(--color-subtle);">Tracked scripts</p>
+  </div></div>
+  <div class="sp-card"><div class="sp-card__body" style="text-align:center;">
+    <p style="margin:0;font-size:2rem;font-weight:700;color:{% if pending_updates %}var(--wmf-red){% else %}var(--wmf-green){% endif %};">
+      {{ pending_updates }}
+    </p>
+    <p style="margin:.25rem 0 0;font-size:.875rem;color:var(--color-subtle);">Pending updates</p>
+  </div></div>
+  <div class="sp-card"><div class="sp-card__body" style="text-align:center;">
+    <p style="margin:0;font-size:2rem;font-weight:700;color:var(--color-base);">{{ recent_logs|length }}</p>
+    <p style="margin:.25rem 0 0;font-size:.875rem;color:var(--color-subtle);">Recent publishes</p>
+  </div></div>
+</div>
+
+{# How-to steps #}
+<div class="sp-card" style="margin-bottom:1.25rem;">
+  <div class="sp-card__header">How WikiScriptSync works</div>
+  <div class="sp-card__body">
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;">
+
+      <a href="{% url 'upload_files' %}" style="display:block;padding:1rem;border:1px solid var(--border-color);border-radius:4px;color:inherit;text-decoration:none;">
+        <div style="width:32px;height:32px;background:var(--wmf-blue-light);border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:.5rem;">
+          <i class="fa-solid fa-upload" style="color:var(--wmf-blue);font-size:.875rem;"></i>
+        </div>
+        <strong style="font-size:.9375rem;">1. Fetch repo</strong>
+        <p style="margin:.25rem 0 0;font-size:.8125rem;color:var(--color-subtle);line-height:1.5;">
+          Enter a GitHub or GitLab URL. JS and CSS files appear instantly.
+        </p>
+      </a>
+
+      <a href="{% url 'mapping_config' %}" style="display:block;padding:1rem;border:1px solid var(--border-color);border-radius:4px;color:inherit;text-decoration:none;">
+        <div style="width:32px;height:32px;background:var(--wmf-blue-light);border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:.5rem;">
+          <i class="fa-solid fa-diagram-project" style="color:var(--wmf-blue);font-size:.875rem;"></i>
+        </div>
+        <strong style="font-size:.9375rem;">2. Map files</strong>
+        <p style="margin:.25rem 0 0;font-size:.8125rem;color:var(--color-subtle);line-height:1.5;">
+          Set the destination wiki page for each file, e.g. <span class="sp-mono" style="font-size:.75rem;">User:Dev_Jadiya/script.js</span>.
+        </p>
+      </a>
+
+      <a href="{% url 'publish' %}" style="display:block;padding:1rem;border:1px solid var(--border-color);border-radius:4px;color:inherit;text-decoration:none;">
+        <div style="width:32px;height:32px;background:var(--wmf-blue-light);border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:.5rem;">
+          <i class="fa-solid fa-code-compare" style="color:var(--wmf-blue);font-size:.875rem;"></i>
+        </div>
+        <strong style="font-size:.9375rem;">3. Review diff &amp; publish</strong>
+        <p style="margin:.25rem 0 0;font-size:.8125rem;color:var(--color-subtle);line-height:1.5;">
+          See the diff, get an edit URL, copy the content, paste it on the wiki yourself.
+        </p>
+      </a>
+
+      <a href="{% url 'notifications' %}" style="display:block;padding:1rem;border:1px solid var(--border-color);border-radius:4px;color:inherit;text-decoration:none;">
+        <div style="width:32px;height:32px;background:var(--wmf-blue-light);border-radius:4px;display:flex;align-items:center;justify-content:center;margin-bottom:.5rem;">
+          <i class="fa-solid fa-bell" style="color:var(--wmf-blue);font-size:.875rem;"></i>
+        </div>
+        <strong style="font-size:.9375rem;">4. Get notified of updates</strong>
+        <p style="margin:.25rem 0 0;font-size:.8125rem;color:var(--color-subtle);line-height:1.5;">
+          When GitHub changes, WikiScriptSyncBot posts on your
+          <a href="https://meta.wikimedia.org/wiki/User_talk:{{ current_user.username }}" target="_blank" rel="noopener">meta talk page</a>.
+        </p>
+      </a>
+
+    </div>
+  </div>
+</div>
+
+{# Test notification button #}
+<div class="sp-card" style="margin-bottom:1.25rem;">
+  <div class="sp-card__header">Test notification system</div>
+  <div class="sp-card__body">
+    <p style="margin:0 0 .75rem;font-size:.875rem;color:var(--color-subtle);">
+      After publishing a file and enabling notifications, you can manually trigger the update check.
+      This is what a Toolforge cron job will do automatically in production.
+    </p>
+    <div style="display:flex;gap:.75rem;align-items:center;flex-wrap:wrap;">
+      <a href="/api/check-updates/" class="sp-btn sp-btn--primary" id="checkUpdatesBtn">
+        <i class="fa-solid fa-rotate"></i> Run check-updates now
+      </a>
+      <span style="font-size:.8125rem;color:var(--color-subtle);">
+        Checks all your tracked scripts. If any upstream file changed, the bot posts on your
+        <a href="https://meta.wikimedia.org/wiki/User_talk:{{ current_user.username }}" target="_blank" rel="noopener">meta.wikimedia.org talk page</a>.
+      </span>
+    </div>
+    <div id="checkResult" style="display:none;margin-top:.75rem;padding:.75rem;border-radius:4px;font-size:.875rem;"></div>
+  </div>
+</div>
+
+{# Recent publishes #}
+<div class="sp-card">
+  <div class="sp-card__header">
+    <span>Recent publishes</span>
+    <a href="{% url 'publish_log' %}" style="font-size:.8125rem;font-weight:400;">View all</a>
+  </div>
+  {% if recent_logs %}
+  <div style="overflow-x:auto;">
+    <table class="sp-table">
+      <thead><tr>
+        <th>File</th><th>Target page</th><th>Method</th><th>Status</th><th>Date</th>
+      </tr></thead>
+      <tbody>
+        {% for log in recent_logs %}
+        <tr>
+          <td class="sp-mono sp-text-small">{{ log.source_file }}</td>
+          <td class="sp-text-small sp-text-subtle sp-mono">{{ log.target_page }}</td>
+          <td class="sp-text-small">{{ log.publish_method }}</td>
+          <td>
+            {% if log.status == "success" %}
+              <span class="sp-badge sp-badge--success"><i class="fa-solid fa-check"></i> Published</span>
+            {% elif log.status == "failed" %}
+              <span class="sp-badge sp-badge--error"><i class="fa-solid fa-xmark"></i> Failed</span>
+            {% else %}
+              <span class="sp-badge sp-badge--pending"><i class="fa-regular fa-clock"></i> Pending</span>
+            {% endif %}
+          </td>
+          <td class="sp-text-small sp-text-subtle" style="white-space:nowrap;">{{ log.created_at|date:"M d, H:i" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding:2rem;text-align:center;color:var(--color-subtle);font-size:.875rem;">
+    No publishes yet. <a href="{% url 'upload_files' %}">Start your first publish.</a>
+  </div>
+  {% endif %}
+</div>
+
+<script>
+// Make check-updates button show result inline instead of navigating away
+document.getElementById("checkUpdatesBtn").addEventListener("click", async function(e) {
+  e.preventDefault();
+  this.innerHTML = '<i class="fa-solid fa-circle-notch fa-spin"></i> Checking…';
+  this.style.pointerEvents = "none";
+
+  try {
+    const r    = await fetch("/api/check-updates/");
+    const data = await r.json();
+    const el   = document.getElementById("checkResult");
+    el.style.display = "block";
+    if (r.ok) {
+      const s = data.summary;
+      el.style.background = "var(--wmf-green-light)";
+      el.style.border     = "1px solid var(--wmf-green)";
+      el.style.color      = "#0d5c4a";
+      el.innerHTML = `<i class="fa-solid fa-circle-check"></i> <strong>Check complete.</strong> ${data.message}`;
+    } else {
+      el.style.background = "var(--wmf-red-light)";
+      el.style.border     = "1px solid var(--wmf-red)";
+      el.style.color      = "#7a1a1a";
+      el.textContent      = data.error || "Check failed.";
+    }
+  } catch(e) {
+    const el = document.getElementById("checkResult");
+    el.style.display = "block";
+    el.style.background = "var(--wmf-red-light)";
+    el.textContent = "Network error running check.";
+  }
+
+  this.innerHTML = '<i class="fa-solid fa-rotate"></i> Run check-updates now';
+  this.style.pointerEvents = "auto";
+});
+</script>
+{% endblock %}

@@ -1,0 +1,107 @@
+{% extends 'base_dashboard.html' %}
+{% block dashboard_content %}
+<h1 class="sp-page-title">Mapping configuration</h1>
+<p class="sp-page-subtitle">Define where each selected file should be published on the wiki.</p>
+
+<div class="sp-card">
+  <div class="sp-card__header">
+    <span>File mappings</span>
+    <div style="display:flex;gap:.5rem;">
+      <button onclick="autoSuggest()" class="sp-btn sp-btn--sm"><i class="fa-solid fa-wand-magic-sparkles"></i> Auto-suggest</button>
+      <button onclick="applySandbox()" class="sp-btn sp-btn--sm" style="color:#5c4a00;border-color:#c8a400;"><i class="fa-solid fa-flask"></i> Sandbox</button>
+    </div>
+  </div>
+
+  <div id="emptyState" class="hidden" style="padding:3rem;text-align:center;color:var(--color-subtle);">
+    <i class="fa-solid fa-upload" style="font-size:2rem;opacity:.3;display:block;margin-bottom:.75rem;"></i>
+    No files selected. <a href="{% url 'upload_files' %}">Go back to upload files.</a>
+  </div>
+
+  <div style="overflow-x:auto;">
+    <table class="sp-table" id="mappingTable">
+      <thead><tr>
+        <th style="width:30%">Source file</th>
+        <th style="width:24%">Target wiki</th>
+        <th>Destination page</th>
+        <th style="width:44px;text-align:center;">✕</th>
+      </tr></thead>
+      <tbody id="mappingTableBody"></tbody>
+    </table>
+  </div>
+
+  <div class="sp-card__footer">
+    <p style="flex:1;margin:0;font-size:.8125rem;color:var(--color-subtle);align-self:center;">
+      Use full page names, e.g. <span class="sp-mono">User:Dev_Jadiya/script.js</span>
+    </p>
+    <button onclick="saveMappings()" class="sp-btn"><i class="fa-regular fa-floppy-disk"></i> Save</button>
+    <a href="{% url 'publish' %}" class="sp-btn sp-btn--primary">Continue to publish <i class="fa-solid fa-arrow-right"></i></a>
+  </div>
+</div>
+
+<div id="toastContainer" style="position:fixed;bottom:1.5rem;right:1.5rem;z-index:400;display:flex;flex-direction:column;gap:.5rem;"></div>
+
+<script>
+const WIKI_CHOICES = {{ wiki_choices|safe }};
+let fileMappings = [];
+
+document.addEventListener("DOMContentLoaded", () => {
+  const saved = sessionStorage.getItem("mappingConfig");
+  const fresh = sessionStorage.getItem("selectedFiles");
+  if (saved) {
+    fileMappings = JSON.parse(saved);
+  } else if (fresh) {
+    fileMappings = JSON.parse(fresh).map(f => ({source: f.name, wiki: "commons.wikimedia.org", dest: ""}));
+  }
+  renderTable();
+});
+
+function renderTable() {
+  const tbody = document.getElementById("mappingTableBody");
+  const empty = document.getElementById("emptyState");
+  tbody.innerHTML = "";
+  if (!fileMappings.length) { empty.classList.remove("hidden"); return; }
+  empty.classList.add("hidden");
+  fileMappings.forEach((file, i) => {
+    const opts = WIKI_CHOICES.map(w => `<option value="${w}" ${file.wiki===w?"selected":""}>${w}</option>`).join("");
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="sp-mono sp-text-small">${esc(file.source)}</td>
+      <td><select class="sp-select" style="font-size:.8125rem;padding:.3rem .5rem;" onchange="fileMappings[${i}].wiki=this.value">${opts}</select></td>
+      <td><input type="text" class="sp-input" style="font-size:.8125rem;" value="${esc(file.dest)}"
+           placeholder="MediaWiki:Gadget-Name.js" oninput="fileMappings[${i}].dest=this.value" /></td>
+      <td style="text-align:center;">
+        <button onclick="removeFile(${i})" class="sp-btn sp-btn--quiet sp-btn--sm" style="color:var(--wmf-red);">
+          <i class="fa-regular fa-trash-can"></i>
+        </button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function removeFile(i) { fileMappings.splice(i,1); renderTable(); toast(`Removed`); }
+
+function autoSuggest() {
+  let n = 0;
+  fileMappings.forEach(f => { if (!f.dest) { f.dest = "MediaWiki:Gadget-" + f.source.split("/").pop(); n++; } });
+  renderTable(); toast(`Auto-suggested ${n} path(s)`);
+}
+
+function applySandbox() {
+  const user = "{{ current_user.username }}";
+  fileMappings.forEach(f => { f.dest = `User:${user}/Sandbox/${f.source.split("/").pop()}`; });
+  renderTable(); toast("All destinations set to your sandbox");
+}
+
+function saveMappings() { sessionStorage.setItem("mappingConfig", JSON.stringify(fileMappings)); toast("Mappings saved", "success"); }
+
+function toast(msg, type="info") {
+  const c = document.getElementById("toastContainer");
+  const d = document.createElement("div");
+  d.style.cssText = `background:var(--bg-base);border:1px solid var(--border-color);border-radius:4px;padding:.625rem 1rem;font-size:.875rem;box-shadow:0 2px 8px rgba(0,0,0,.15);`;
+  d.textContent = msg;
+  c.appendChild(d); setTimeout(() => d.remove(), 3000);
+}
+
+function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+</script>
+{% endblock %}

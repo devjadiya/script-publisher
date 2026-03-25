@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="sp-container" style="max-width:520px;padding-top:4rem;padding-bottom:4rem;">
+  {% if success %}
+  <div class="sp-card">
+    <div class="sp-card__body" style="text-align:center;padding:2.5rem;">
+      <div style="width:48px;height:48px;background:var(--wmf-green-light);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:1rem;">
+        <i class="fa-solid fa-bell-slash" style="color:var(--wmf-green);font-size:1.2rem;"></i>
+      </div>
+      <h2 style="margin:0 0 .5rem;font-size:1.25rem;">Notifications disabled</h2>
+      <p style="color:var(--color-subtle);font-size:.9375rem;margin:0 0 1.5rem;">
+        <strong>{{ username }}</strong> has been unsubscribed from WikiScriptSync change notifications.
+        You will no longer receive talk-page messages when tracked scripts change.
+      </p>
+      <p style="color:var(--color-subtle);font-size:.875rem;margin:0 0 1.5rem;">
+        You can re-enable notifications any time by logging in to
+        <a href="{% url 'notifications' %}">your notification preferences</a>.
+      </p>
+      <a href="{% url 'home' %}" class="sp-btn">Return to home</a>
+    </div>
+  </div>
+  {% else %}
+  <div class="sp-card">
+    <div class="sp-card__body" style="text-align:center;padding:2.5rem;">
+      <div style="width:48px;height:48px;background:var(--wmf-red-light);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;margin-bottom:1rem;">
+        <i class="fa-solid fa-triangle-exclamation" style="color:var(--wmf-red);font-size:1.2rem;"></i>
+      </div>
+      <h2 style="margin:0 0 .5rem;font-size:1.25rem;">Invalid link</h2>
+      <p style="color:var(--color-subtle);font-size:.9375rem;margin:0 0 1.5rem;">{{ error }}</p>
+      <a href="{% url 'home' %}" class="sp-btn">Return to home</a>
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

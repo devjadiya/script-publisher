@@ -1,0 +1,12 @@
+.env
+db.sqlite3
+__pycache__/
+*.py[cod]
+*.pyo
+staticfiles/
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+output.txt

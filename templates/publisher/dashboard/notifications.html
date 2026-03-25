@@ -1,0 +1,148 @@
+{% extends 'base_dashboard.html' %}
+{% block dashboard_content %}
+<h1 class="sp-page-title">Change notifications</h1>
+<p class="sp-page-subtitle">
+  When a tracked script's source repository changes, WikiScriptSync posts a message
+  to your Wikimedia talk page so you know to review and update.
+</p>
+
+<div class="sp-notice sp-notice--info" style="margin-bottom:1.5rem;">
+  <i class="fa-solid fa-circle-info" style="flex-shrink:0;margin-top:.1rem;"></i>
+  <div>
+    <strong>How this works:</strong> After you publish a script, it is tracked automatically.
+    A dedicated bot account checks for upstream changes and posts to your talk page on
+    <strong>{{ notifier_bot_wiki }}</strong> as user <strong>{{ notifier_bot_display }}</strong>.
+    You decide whether to publish the new version — nothing is changed automatically.
+  </div>
+</div>
+
+{% if pref and pref.opted_out %}
+<div class="sp-notice sp-notice--warning" style="margin-bottom:1.5rem;">
+  <i class="fa-solid fa-bell-slash" style="flex-shrink:0;"></i>
+  <div>Notifications are currently <strong>disabled</strong>. Re-enable below to start receiving talk-page messages.</div>
+</div>
+{% endif %}
+
+{# Subscription card #}
+<div class="sp-card" style="margin-bottom:1.25rem;">
+  <div class="sp-card__header">Your subscription</div>
+  <div class="sp-card__body">
+
+    <div class="sp-field">
+      <label class="sp-label">Your Wikimedia username</label>
+      <input type="text" class="sp-input" value="{{ current_user.username }}" readonly
+             style="background:var(--bg-neutral);max-width:360px;" />
+      <p class="sp-field-hint">
+        Notifications will be posted to
+        <span class="sp-mono">User_talk:{{ current_user.username }}</span>
+        on the wiki where the script is located.
+      </p>
+    </div>
+
+    {% if pref and not pref.opted_out %}
+    <div style="display:flex;gap:.75rem;align-items:center;padding:.875rem;background:var(--wmf-green-light);border:1px solid var(--wmf-green);border-radius:4px;margin-bottom:1rem;">
+      <i class="fa-solid fa-bell" style="color:var(--wmf-green);flex-shrink:0;"></i>
+      <div>
+        <strong style="color:#0d5c4a;">Notifications enabled</strong>
+        <p style="margin:.2rem 0 0;font-size:.8125rem;color:#0d5c4a;">
+          You will receive a talk-page message when a tracked script's upstream source changes.
+        </p>
+      </div>
+    </div>
+    <form method="POST" action="{% url 'notifications' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="opt_out" />
+      <button type="submit" class="sp-btn" style="color:var(--wmf-red);border-color:var(--wmf-red);">
+        <i class="fa-solid fa-bell-slash"></i> Opt out of notifications
+      </button>
+    </form>
+    {% else %}
+    <form method="POST" action="{% url 'notifications' %}">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="opt_in" />
+      <button type="submit" class="sp-btn sp-btn--primary">
+        <i class="fa-solid fa-bell"></i> Enable notifications
+      </button>
+    </form>
+    {% endif %}
+
+  </div>
+</div>
+
+{# Tracked scripts #}
+<div class="sp-card" style="margin-bottom:1.25rem;">
+  <div class="sp-card__header">
+    <span>Tracked scripts</span>
+    <span class="sp-badge sp-badge--neutral">{{ tracked|length }}</span>
+  </div>
+  {% if tracked %}
+  <div style="overflow-x:auto;">
+    <table class="sp-table">
+      <thead><tr>
+        <th>Source file</th><th>Repository</th><th>Target page</th><th>Last checked</th><th>Status</th>
+      </tr></thead>
+      <tbody>
+        {% for t in tracked %}
+        <tr>
+          <td class="sp-mono sp-text-small">{{ t.source_file }}</td>
+          <td class="sp-text-small"><a href="{{ t.source_repo }}" target="_blank" rel="noopener">{{ t.source_repo|truncatechars:45 }}</a></td>
+          <td class="sp-mono sp-text-small">
+            <a href="https://{{ t.target_wiki }}/wiki/{{ t.target_page }}" target="_blank" rel="noopener">{{ t.target_page }}</a>
+          </td>
+          <td class="sp-text-small sp-text-subtle">
+            {% if t.last_checked_at %}{{ t.last_checked_at|date:"M d, H:i" }}{% else %}Never{% endif %}
+          </td>
+          <td>
+            {% if t.has_update %}
+            <span class="sp-badge sp-badge--pending"><i class="fa-solid fa-circle-exclamation"></i> Update available</span>
+            {% else %}
+            <span class="sp-badge sp-badge--success"><i class="fa-solid fa-check"></i> Up to date</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding:2.5rem;text-align:center;color:var(--color-subtle);font-size:.875rem;">
+    <i class="fa-solid fa-code-branch" style="font-size:2rem;opacity:.25;display:block;margin-bottom:.75rem;"></i>
+    No tracked scripts yet. Scripts are tracked automatically when you publish using this tool.
+  </div>
+  {% endif %}
+</div>
+
+{# Notification log #}
+<div class="sp-card">
+  <div class="sp-card__header">Notification log</div>
+  {% if notification_logs %}
+  <div style="overflow-x:auto;">
+    <table class="sp-table">
+      <thead><tr>
+        <th>Script</th><th>Talk page notified</th><th>Sent</th><th>Result</th>
+      </tr></thead>
+      <tbody>
+        {% for log in notification_logs %}
+        <tr>
+          <td class="sp-mono sp-text-small">{{ log.tracked_script.source_file }}</td>
+          <td class="sp-text-small sp-text-subtle">User_talk:{{ log.notified_username }}</td>
+          <td class="sp-text-small sp-text-subtle">{{ log.sent_at|date:"M d, H:i" }}</td>
+          <td>
+            {% if log.success %}
+            <span class="sp-badge sp-badge--success">Delivered</span>
+            {% else %}
+            <span class="sp-badge sp-badge--error" title="{{ log.error_message }}">Failed</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="padding:1.5rem;text-align:center;font-size:.875rem;color:var(--color-subtle);">
+    No notifications sent yet.
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

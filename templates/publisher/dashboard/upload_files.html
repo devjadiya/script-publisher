@@ -1,0 +1,196 @@
+{% extends 'base_dashboard.html' %}
+{% block dashboard_content %}
+<h1 class="sp-page-title">Upload Files</h1>
+<p class="sp-page-subtitle">Connect a public repository to fetch its JavaScript and CSS files.</p>
+
+<div class="sp-card" style="margin-bottom:1.5rem;">
+  <div class="sp-card__header">Source Repository</div>
+  <div class="sp-card__body">
+
+    <div class="sp-notice sp-notice--info" style="margin-bottom:1.25rem;">
+      <i class="fa-solid fa-circle-info" style="flex-shrink:0;margin-top:.1rem;"></i>
+      <div>
+        Files are fetched directly from GitHub or GitLab APIs — no third-party services.
+        Only <span class="sp-mono">.js</span> and <span class="sp-mono">.css</span> files are shown.
+        GitHub allows <strong>60 unauthenticated requests per hour</strong> — avoid fetching the same repo repeatedly.
+      </div>
+    </div>
+
+    <div style="display:flex;gap:.75rem;align-items:flex-start;">
+      <div style="flex:1;">
+        <input type="text" id="repoInput" class="sp-input"
+          placeholder="https://github.com/devjadiya/test-wikiscript" />
+        <p class="sp-field-hint">Supports github.com and gitlab.wikimedia.org public repositories.</p>
+      </div>
+      <button onclick="fetchRepo()" id="fetchBtn" class="sp-btn sp-btn--primary" style="white-space:nowrap;flex-shrink:0;">
+        <span id="btnText">Fetch files</span>
+        <i id="btnLoader" class="fa-solid fa-circle-notch fa-spin hidden"></i>
+      </button>
+    </div>
+
+    <div id="fetchError" class="sp-notice sp-notice--error hidden" style="margin-top:1rem;">
+      <i class="fa-solid fa-circle-exclamation" style="flex-shrink:0;"></i>
+      <p id="fetchErrorText" style="margin:0;font-size:.875rem;"></p>
+    </div>
+  </div>
+</div>
+
+<div id="fileSection" class="sp-card hidden">
+  <div class="sp-card__header">
+    <div>
+      <span>Select files to publish</span>
+      <span id="repoLabel" style="margin-left:.5rem;font-size:.8125rem;font-weight:400;color:var(--color-subtle);"></span>
+    </div>
+    <label style="display:flex;align-items:center;gap:.5rem;font-size:.875rem;font-weight:400;cursor:pointer;">
+      <input id="selectAll" type="checkbox" checked onchange="toggleAll(this)" />
+      Select all
+    </label>
+  </div>
+  <div style="overflow-x:auto;">
+    <table class="sp-table">
+      <thead><tr>
+        <th style="width:40px;"></th>
+        <th>File</th>
+        <th style="width:90px;text-align:center;">Size</th>
+        <th style="width:70px;text-align:center;">Preview</th>
+      </tr></thead>
+      <tbody id="fileTableBody"></tbody>
+    </table>
+  </div>
+  <div class="sp-card__footer" style="justify-content:space-between;align-items:center;">
+    <p style="margin:0;font-size:.8125rem;color:var(--color-subtle);" id="fileCount"></p>
+    <button onclick="saveAndContinue()" class="sp-btn sp-btn--primary">
+      Continue to mapping <i class="fa-solid fa-arrow-right"></i>
+    </button>
+  </div>
+</div>
+
+{# Preview modal #}
+<div id="previewModal" style="display:none;position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.5);align-items:center;justify-content:center;">
+  <div style="background:var(--bg-base);border-radius:4px;width:100%;max-width:720px;max-height:80vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.2);">
+    <div style="padding:.875rem 1.25rem;border-bottom:1px solid var(--border-color);display:flex;justify-content:space-between;align-items:center;background:var(--bg-neutral);">
+      <h3 id="modalTitle" class="sp-mono" style="margin:0;font-size:.9375rem;"></h3>
+      <button onclick="closeModal()" class="sp-btn sp-btn--quiet sp-btn--sm"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+    <div style="overflow:auto;flex:1;padding:1rem;background:var(--bg-neutral);">
+      <pre id="modalContent" style="margin:0;font-size:.8125rem;font-family:'SFMono-Regular',Consolas,monospace;white-space:pre-wrap;line-height:1.5;"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const CSRF_TOKEN = "{{ csrf_token }}";
+let fetchedFiles = [];
+
+// Clear stale session data when landing on upload page fresh
+// (keeps repoUrl since user might want to re-use it)
+sessionStorage.removeItem("selectedFiles");
+sessionStorage.removeItem("mappingConfig");
+
+async function fetchRepo() {
+  const repoUrl = document.getElementById("repoInput").value.trim();
+  if (!repoUrl) { showError("Please enter a repository URL."); return; }
+
+  setLoading(true); hideError();
+  document.getElementById("fileSection").classList.add("hidden");
+  document.getElementById("fileTableBody").innerHTML = "";
+  fetchedFiles = [];
+
+  // Clear session so old file data doesn't persist
+  sessionStorage.removeItem("selectedFiles");
+  sessionStorage.removeItem("mappingConfig");
+
+  try {
+    const r = await fetch("/api/fetch-repo/", {
+      method: "POST",
+      headers: {"Content-Type": "application/json", "X-CSRFToken": CSRF_TOKEN},
+      body: JSON.stringify({repo_url: repoUrl}),
+    });
+    const data = await r.json();
+
+    if (!r.ok) {
+      if (r.status === 422 && data.error && data.error.includes("rate limit")) {
+        showError("GitHub rate limit reached (60 requests/hour for unauthenticated users). Please wait a few minutes and try again. Avoid fetching the same repo multiple times quickly.");
+      } else {
+        showError(data.error || "Failed to fetch repository.");
+      }
+      return;
+    }
+    if (!data.files || !data.files.length) {
+      showError("No .js or .css files found in this repository. Make sure the repo is public and contains JavaScript or CSS files.");
+      return;
+    }
+
+    fetchedFiles = data.files;
+    sessionStorage.setItem("repoUrl", repoUrl);
+    renderFileTable(data.files);
+    document.getElementById("repoLabel").textContent = `— ${repoUrl.replace("https://", "")}`;
+    document.getElementById("fileSection").classList.remove("hidden");
+    document.getElementById("fileCount").textContent =
+      `${data.files.length} file${data.files.length === 1 ? "" : "s"} found — select which ones to publish`;
+  } catch(e) {
+    showError("Could not connect to the server. Please try again.");
+    console.error(e);
+  } finally {
+    setLoading(false);
+  }
+}
+
+function renderFileTable(files) {
+  const tbody = document.getElementById("fileTableBody");
+  tbody.innerHTML = "";
+  files.forEach((file, i) => {
+    const isJs   = file.name.endsWith(".js");
+    const icon   = isJs ? "fa-square-js" : "fa-css3";
+    const color  = isJs ? "#f7d914" : "#2965f1";
+    const sizeKb = (file.size / 1024).toFixed(1);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td style="padding:.625rem .875rem;">
+        <input type="checkbox" checked data-index="${i}" class="file-checkbox" />
+      </td>
+      <td>
+        <div style="display:flex;align-items:center;gap:.5rem;">
+          <i class="fa-brands ${icon}" style="color:${color};font-size:1.1rem;flex-shrink:0;"></i>
+          <span class="sp-mono sp-text-small">${esc(file.name)}</span>
+          <span style="font-size:.75rem;color:var(--color-placeholder);text-transform:uppercase;">${esc(file.platform)}</span>
+        </div>
+      </td>
+      <td style="text-align:center;" class="sp-text-small sp-text-subtle">${sizeKb} KB</td>
+      <td style="text-align:center;">
+        <button onclick="openModal(${i})" class="sp-btn sp-btn--quiet sp-btn--sm" title="Preview">
+          <i class="fa-regular fa-eye"></i>
+        </button>
+      </td>`;
+    tbody.appendChild(tr);
+  });
+}
+
+function saveAndContinue() {
+  const selected = Array.from(document.querySelectorAll(".file-checkbox:checked"))
+    .map(cb => fetchedFiles[parseInt(cb.dataset.index)]);
+  if (!selected.length) { alert("Please select at least one file to continue."); return; }
+  sessionStorage.setItem("selectedFiles", JSON.stringify(selected));
+  window.location.href = "{% url 'mapping_config' %}";
+}
+
+function openModal(i) {
+  document.getElementById("modalTitle").textContent  = fetchedFiles[i].name;
+  document.getElementById("modalContent").textContent = fetchedFiles[i].content;
+  document.getElementById("previewModal").style.display = "flex";
+}
+function closeModal() { document.getElementById("previewModal").style.display = "none"; }
+function toggleAll(src) { document.querySelectorAll(".file-checkbox").forEach(cb => cb.checked = src.checked); }
+function setLoading(on) {
+  document.getElementById("btnText").textContent = on ? "Fetching…" : "Fetch files";
+  document.getElementById("btnLoader").classList.toggle("hidden", !on);
+  document.getElementById("fetchBtn").disabled = on;
+}
+function showError(msg) {
+  document.getElementById("fetchError").classList.remove("hidden");
+  document.getElementById("fetchErrorText").textContent = msg;
+}
+function hideError() { document.getElementById("fetchError").classList.add("hidden"); }
+function esc(s) { return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+</script>
+{% endblock %}
